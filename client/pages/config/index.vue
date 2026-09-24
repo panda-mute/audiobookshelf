@@ -130,6 +130,60 @@
             </ui-tooltip>
           </div>
 
+          <div class="pt-3 pb-1">
+            <h3 class="font-medium text-sm text-white/80">{{ $strings.HeaderSettingsHomeModules }}</h3>
+          </div>
+
+          <div class="flex items-center py-2">
+            <ui-toggle-switch labeledBy="settings-home-show-continue-items" v-model="newServerSettings.homeShowContinueItems" :disabled="updatingServerSettings" @input="(val) => updateSettingsKey('homeShowContinueItems', val)" />
+            <ui-tooltip :text="$strings.LabelSettingsHomeShowContinueItemsHelp">
+              <p class="pl-4">
+                <span id="settings-home-show-continue-items">{{ $strings.LabelSettingsHomeShowContinueItems }}</span>
+                <span class="material-symbols icon-text">info</span>
+              </p>
+            </ui-tooltip>
+          </div>
+
+          <div class="flex items-center py-2">
+            <ui-toggle-switch labeledBy="settings-home-show-recently-added" v-model="newServerSettings.homeShowRecentlyAdded" :disabled="updatingServerSettings" @input="(val) => updateSettingsKey('homeShowRecentlyAdded', val)" />
+            <ui-tooltip :text="$strings.LabelSettingsHomeShowRecentlyAddedHelp">
+              <p class="pl-4">
+                <span id="settings-home-show-recently-added">{{ $strings.LabelSettingsHomeShowRecentlyAdded }}</span>
+                <span class="material-symbols icon-text">info</span>
+              </p>
+            </ui-tooltip>
+          </div>
+
+          <div class="flex items-center py-2">
+            <ui-toggle-switch labeledBy="settings-home-show-recent-series" v-model="newServerSettings.homeShowRecentSeries" :disabled="updatingServerSettings" @input="(val) => updateSettingsKey('homeShowRecentSeries', val)" />
+            <ui-tooltip :text="$strings.LabelSettingsHomeShowRecentSeriesHelp">
+              <p class="pl-4">
+                <span id="settings-home-show-recent-series">{{ $strings.LabelSettingsHomeShowRecentSeries }}</span>
+                <span class="material-symbols icon-text">info</span>
+              </p>
+            </ui-tooltip>
+          </div>
+
+          <div class="flex items-center py-2">
+            <ui-toggle-switch labeledBy="settings-home-show-discover" v-model="newServerSettings.homeShowDiscover" :disabled="updatingServerSettings" @input="(val) => updateSettingsKey('homeShowDiscover', val)" />
+            <ui-tooltip :text="$strings.LabelSettingsHomeShowDiscoverHelp">
+              <p class="pl-4">
+                <span id="settings-home-show-discover">{{ $strings.LabelSettingsHomeShowDiscover }}</span>
+                <span class="material-symbols icon-text">info</span>
+              </p>
+            </ui-tooltip>
+          </div>
+
+          <div class="flex items-center py-2">
+            <ui-toggle-switch labeledBy="settings-home-show-newest-authors" v-model="newServerSettings.homeShowNewestAuthors" :disabled="updatingServerSettings" @input="(val) => updateSettingsKey('homeShowNewestAuthors', val)" />
+            <ui-tooltip :text="$strings.LabelSettingsHomeShowNewestAuthorsHelp">
+              <p class="pl-4">
+                <span id="settings-home-show-newest-authors">{{ $strings.LabelSettingsHomeShowNewestAuthors }}</span>
+                <span class="material-symbols icon-text">info</span>
+              </p>
+            </ui-tooltip>
+          </div>
+
           <div class="grow py-2">
             <ui-dropdown :label="$strings.LabelSettingsDateFormat" v-model="newServerSettings.dateFormat" :items="dateFormats" small class="max-w-72" @input="(val) => updateSettingsKey('dateFormat', val)" />
             <p class="text-xs ml-1 text-white/60">{{ $strings.LabelExample }}: {{ dateExample }}</p>

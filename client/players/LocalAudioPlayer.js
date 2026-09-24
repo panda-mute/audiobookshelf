@@ -52,6 +52,7 @@ export default class LocalAudioPlayer extends EventEmitter {
       'audio/mp4',
       'audio/ogg',
       'audio/aac',
+      'audio/wav',
       'audio/x-ms-wma',
       'audio/x-aiff',
       'audio/webm',
@@ -97,7 +98,16 @@ export default class LocalAudioPlayer extends EventEmitter {
   }
   evtLoadedMetadata(data) {
     if (!this.isHlsTranscode) {
-      this.player.currentTime = this.trackStartTime
+      // Guard: don't seek beyond the actual track duration.
+      // When track durations are unknown (0 in DB for cloud/STRM files), trackStartTime may far
+      // exceed the real file length. Attempting that seek causes a browser error which would
+      // incorrectly trigger the transcode fallback in PlayerHandler.playerError().
+      const actualDuration = this.player.duration
+      if (this.trackStartTime > 0 && Number.isFinite(actualDuration) && actualDuration > 0 && this.trackStartTime > actualDuration) {
+        console.warn(`[LocalPlayer] trackStartTime ${this.trackStartTime}s exceeds actual track duration ${actualDuration}s — skipping seek to avoid error`)
+      } else {
+        this.player.currentTime = this.trackStartTime
+      }
     }
 
     this.emit('stateChange', 'LOADED')

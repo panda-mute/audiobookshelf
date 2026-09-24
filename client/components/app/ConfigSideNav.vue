@@ -10,12 +10,11 @@
         <div v-show="routeName === route.iod" class="h-full w-0.5 bg-yellow-400 absolute top-0 left-0" />
       </nuxt-link>
 
-      <modals-changelog-view-modal v-model="showChangelogModal" :versionData="versionData" />
     </div>
 
     <div class="w-44 h-12 px-4 border-t bg-bg border-black/20 fixed left-0 flex flex-col justify-center" :class="wrapperClass" :style="{ bottom: streamLibraryItem ? '160px' : '0px' }">
       <div class="flex items-center justify-between">
-        <button type="button" class="underline font-mono text-sm" @click="clickChangelog">v{{ $config.version }}</button>
+        <p class="font-mono text-sm">v{{ $config.version }}</p>
 
         <p class="text-xs text-gray-300 italic">{{ Source }}</p>
       </div>
@@ -28,11 +27,6 @@
 export default {
   props: {
     isOpen: Boolean
-  },
-  data() {
-    return {
-      showChangelogModal: false
-    }
   },
   computed: {
     Source() {
@@ -169,9 +163,6 @@ export default {
     }
   },
   methods: {
-    clickChangelog() {
-      this.showChangelogModal = true
-    },
     clickOutside() {
       if (!this.isOpen) return
       this.closeDrawer()

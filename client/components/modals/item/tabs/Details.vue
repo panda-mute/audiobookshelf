@@ -13,6 +13,13 @@
 
         <ui-btn v-if="userIsAdminOrUp && !isFile" :loading="rescanning" :disabled="isLibraryScanning" color="bg-bg" type="button" class="h-full" small @click.stop.prevent="rescan">{{ $strings.ButtonReScan }}</ui-btn>
 
+        <ui-btn v-if="userIsAdminOrUp && !isFile && hasScanFailures" :loading="rescanningFailed" :disabled="isLibraryScanning" color="bg-bg" type="button" class="h-full ml-2" small @click.stop.prevent="rescanFailedFiles">{{ $strings.LabelRescanFailedFiles }}</ui-btn>
+
+        <p v-if="hasScanFailures && userIsAdminOrUp" class="ml-2 md:ml-3 text-red-400 text-xs flex items-center" :title="scanFailureSummary">
+          <span class="material-symbols text-sm mr-1">error</span>
+          {{ scanFailureCount }} {{ $strings.LabelScanFailed }}
+        </p>
+
         <div class="grow" />
 
         <!-- desktop -->
@@ -39,6 +46,7 @@ export default {
       resettingProgress: false,
       isScrollable: false,
       rescanning: false,
+      rescanningFailed: false,
       quickMatching: false
     }
   },
@@ -71,6 +79,20 @@ export default {
     },
     mediaMetadata() {
       return this.media.metadata || {}
+    },
+    scanFailedAudioFiles() {
+      if (!this.media.audioFiles || !this.media.audioFiles.length) return []
+      // 失败 = 有 error, 或"探测过但时长为 0"(跳过探测的 strm 不计入)
+      return this.media.audioFiles.filter((af) => af.error || (af.probeAttempted && (!af.duration || isNaN(af.duration))))
+    },
+    hasScanFailures() {
+      return this.scanFailedAudioFiles.length > 0
+    },
+    scanFailureCount() {
+      return this.scanFailedAudioFiles.length
+    },
+    scanFailureSummary() {
+      return this.scanFailedAudioFiles.map((af) => `${(af.metadata && (af.metadata.filename || af.metadata.relPath)) || ''}: ${af.error}`).join('\n')
     },
     libraryId() {
       return this.libraryItem ? this.libraryItem.libraryId : null
@@ -139,6 +161,24 @@ export default {
           console.error('Failed to scan library item', error)
           this.$toast.error(this.$strings.ToastScanFailed)
           this.rescanning = false
+        })
+    },
+    rescanFailedFiles() {
+      this.rescanningFailed = true
+      this.$axios
+        .$post(`/api/items/${this.libraryItemId}/rescan-failed`)
+        .then((data) => {
+          this.rescanningFailed = false
+          if (data.updated) {
+            this.$toast.success(this.$getString('ToastRescanFailedFilesUpdated', [data.updated]))
+          } else {
+            this.$toast.success(this.$strings.ToastRescanUpToDate)
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to rescan failed library files', error)
+          this.$toast.error(this.$strings.ToastScanFailed)
+          this.rescanningFailed = false
         })
     },
     async saveAndClose() {

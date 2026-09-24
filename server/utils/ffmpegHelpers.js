@@ -6,10 +6,19 @@ const fs = require('../libs/fsExtra')
 const Path = require('path')
 const Logger = require('../Logger')
 const { filePathToPOSIX, copyToExisting } = require('./fileUtils')
+const { isStrmPath, readStrmTarget } = require('./strmUtils')
 
 function escapeSingleQuotes(path) {
   // A ' within a quoted string is escaped with '\'' in ffmpeg (see https://www.ffmpeg.org/ffmpeg-utils.html#Quoting-and-escaping)
   return filePathToPOSIX(path).replace(/'/g, "'\\''")
+}
+
+async function getTrackInputPath(track) {
+  const trackPath = track.metadata.path
+  if (!isStrmPath(trackPath)) {
+    return trackPath
+  }
+  return readStrmTarget(trackPath)
 }
 
 // Returns first track start time
@@ -31,14 +40,18 @@ async function writeConcatFile(tracks, outputPath, startTime = 0) {
     }
   }
 
-  var tracksToInclude = tracks.filter((t) => t.index >= trackToStartWithIndex)
-  var trackPaths = tracksToInclude.map((t) => {
-    var line = "file '" + escapeSingleQuotes(t.metadata.path) + "'\n" + `duration ${t.duration}`
-    return line
-  })
-  var inputstr = trackPaths.join('\n\n')
-
   try {
+    var tracksToInclude = tracks.filter((t) => t.index >= trackToStartWithIndex)
+    var trackPaths = await Promise.all(tracksToInclude.map(async (t) => {
+      const inputPath = await getTrackInputPath(t)
+      var line = "file '" + escapeSingleQuotes(inputPath) + "'"
+      if (!isNaN(t.duration) && t.duration !== null) {
+        line += "\n" + `duration ${t.duration}`
+      }
+      return line
+    }))
+    var inputstr = trackPaths.join('\n\n')
+
     await fs.writeFile(outputPath, inputstr)
     return firstTrackStartTime
   } catch (error) {

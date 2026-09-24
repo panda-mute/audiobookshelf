@@ -187,7 +187,19 @@ class PodcastEpisode extends Model {
     track.title = this.audioFile.metadata.filename
     track.index = 1 // Podcast episodes only have one track
     track.contentUrl = `/api/items/${libraryItemId}/file/${track.ino}`
+    if (track.strmTarget && track.metadata) {
+      track.metadata.path = track.strmTarget
+    }
     return track
+  }
+
+  getAudioFileForClient() {
+    const audioFile = structuredClone(this.audioFile)
+    if (audioFile?.strmTarget && audioFile.metadata) {
+      audioFile.metadata.strmPath = audioFile.metadata.path
+      audioFile.metadata.path = audioFile.strmTarget
+    }
+    return audioFile
   }
 
   toOldJSON(libraryItemId) {
@@ -220,7 +232,7 @@ class PodcastEpisode extends Model {
       guid: this.extraData?.guid || null,
       pubDate: this.pubDate,
       chapters: structuredClone(this.chapters),
-      audioFile: structuredClone(this.audioFile),
+      audioFile: this.getAudioFileForClient(),
       publishedAt: this.publishedAt?.valueOf() || null,
       addedAt: this.createdAt.valueOf(),
       updatedAt: this.updatedAt.valueOf()

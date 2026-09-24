@@ -90,7 +90,11 @@ class Stream extends EventEmitter {
     if (!this.startTime) return 0
     return Math.floor(Math.max(this.startTime - this.maxSeekBackTime, 0) / this.segmentLength)
   }
+  get hasKnownDuration() {
+    return Number.isFinite(this.totalDuration) && this.totalDuration > 0
+  }
   get numSegments() {
+    if (!this.hasKnownDuration) return 0
     var numSegs = Math.floor(this.totalDuration / this.segmentLength)
     if (this.totalDuration - numSegs * this.segmentLength > 0) {
       numSegs++
@@ -146,7 +150,9 @@ class Stream extends EventEmitter {
 
   async generatePlaylist() {
     await fs.ensureDir(this.streamPath)
-    await hlsPlaylistGenerator(this.playlistPath, 'output', this.totalDuration, this.segmentLength, this.hlsSegmentType)
+    if (this.hasKnownDuration) {
+      await hlsPlaylistGenerator(this.playlistPath, 'output', this.totalDuration, this.segmentLength, this.hlsSegmentType)
+    }
     return this.clientPlaylistUri
   }
 
@@ -200,7 +206,7 @@ class Stream extends EventEmitter {
         else chunks.push(`${current_chunk[0]}-${current_chunk[current_chunk.length - 1]}`)
       }
 
-      var perc = ((this.segmentsCreated.size * 100) / this.numSegments).toFixed(2) + '%'
+      const perc = this.numSegments ? ((this.segmentsCreated.size * 100) / this.numSegments).toFixed(2) + '%' : '0%'
       Logger.info('[STREAM-CHECK] Check Files', this.segmentsCreated.size, 'of', this.numSegments, perc, `Furthest Segment: ${this.furthestSegmentCreated}`)
       // Logger.debug('[STREAM-CHECK] Chunks', chunks.join(', '))
 
@@ -254,6 +260,9 @@ class Stream extends EventEmitter {
     this.ffmpeg.inputOption('-seek_timestamp 1')
     this.ffmpeg.inputFormat('concat')
     this.ffmpeg.inputOption('-safe 0')
+    if (this.tracks.some((track) => track.metadata.ext?.toLowerCase() === '.strm')) {
+      this.ffmpeg.inputOption('-protocol_whitelist file,http,https,tcp,tls,crypto')
+    }
 
     if (adjustedStartTime > 0) {
       const shiftedStartTime = adjustedStartTime - trackStartTime

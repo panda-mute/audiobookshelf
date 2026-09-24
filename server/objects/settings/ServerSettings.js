@@ -25,8 +25,38 @@ const PATCHABLE_SETTINGS_KEYS = new Set([
   'timeFormat',
   'language',
   'chromecastEnabled',
-  'sortingIgnorePrefix'
+  'sortingIgnorePrefix',
+  'homeShowContinueItems',
+  'homeShowContinueSeries',
+  'homeShowRecentlyAdded',
+  'homeShowRecentSeries',
+  'homeShowDiscover',
+  'homeShowListenAgain',
+  'homeShowNewestAuthors',
+  'homeShowNewestEpisodes',
+  'homeModulesOrder'
 ])
+
+const DEFAULT_HOME_MODULES_ORDER = ['continue-listening', 'continue-reading', 'continue-series', 'recently-added', 'recent-series', 'discover', 'listen-again', 'read-again', 'newest-authors', 'newest-episodes']
+
+function normalizeHomeModulesOrder(order) {
+  const configuredOrder = Array.isArray(order) ? order.filter((value) => typeof value === 'string' && value) : []
+  const seen = new Set()
+  const normalized = []
+
+  configuredOrder.forEach((id) => {
+    if (!DEFAULT_HOME_MODULES_ORDER.includes(id) || seen.has(id)) return
+    seen.add(id)
+    normalized.push(id)
+  })
+
+  DEFAULT_HOME_MODULES_ORDER.forEach((id) => {
+    if (seen.has(id)) return
+    normalized.push(id)
+  })
+
+  return normalized
+}
 
 class ServerSettings {
   static patchableSettingsKeys = PATCHABLE_SETTINGS_KEYS
@@ -65,6 +95,15 @@ class ServerSettings {
     // Bookshelf Display
     this.homeBookshelfView = BookshelfView.DETAIL
     this.bookshelfView = BookshelfView.DETAIL
+    this.homeShowContinueItems = true
+    this.homeShowContinueSeries = true
+    this.homeShowRecentlyAdded = true
+    this.homeShowRecentSeries = true
+    this.homeShowDiscover = true
+    this.homeShowListenAgain = true
+    this.homeShowNewestAuthors = true
+    this.homeShowNewestEpisodes = true
+    this.homeModulesOrder = [...DEFAULT_HOME_MODULES_ORDER]
 
     // Podcasts
     this.podcastEpisodeSchedule = '0 * * * *' // Every hour
@@ -139,6 +178,15 @@ class ServerSettings {
 
     this.homeBookshelfView = settings.homeBookshelfView || BookshelfView.STANDARD
     this.bookshelfView = settings.bookshelfView || BookshelfView.STANDARD
+    this.homeShowContinueItems = settings.homeShowContinueItems !== false
+    this.homeShowContinueSeries = settings.homeShowContinueSeries !== false
+    this.homeShowRecentlyAdded = settings.homeShowRecentlyAdded !== false
+    this.homeShowRecentSeries = settings.homeShowRecentSeries !== false
+    this.homeShowDiscover = settings.homeShowDiscover !== false
+    this.homeShowListenAgain = settings.homeShowListenAgain !== false
+    this.homeShowNewestAuthors = settings.homeShowNewestAuthors !== false
+    this.homeShowNewestEpisodes = settings.homeShowNewestEpisodes !== false
+    this.homeModulesOrder = normalizeHomeModulesOrder(settings.homeModulesOrder)
 
     this.sortingIgnorePrefix = !!settings.sortingIgnorePrefix
     this.sortingPrefixes = settings.sortingPrefixes || ['the']
@@ -200,6 +248,33 @@ class ServerSettings {
       // homeBookshelfView was added in 2.1.3
       this.homeBookshelfView = settings.bookshelfView
     }
+    if (settings.homeShowContinueItems == undefined) {
+      this.homeShowContinueItems = true
+    }
+    if (settings.homeShowContinueSeries == undefined) {
+      this.homeShowContinueSeries = true
+    }
+    if (settings.homeShowRecentlyAdded == undefined) {
+      this.homeShowRecentlyAdded = true
+    }
+    if (settings.homeShowRecentSeries == undefined) {
+      this.homeShowRecentSeries = true
+    }
+    if (settings.homeShowDiscover == undefined) {
+      this.homeShowDiscover = true
+    }
+    if (settings.homeShowListenAgain == undefined) {
+      this.homeShowListenAgain = true
+    }
+    if (settings.homeShowNewestAuthors == undefined) {
+      this.homeShowNewestAuthors = true
+    }
+    if (settings.homeShowNewestEpisodes == undefined) {
+      this.homeShowNewestEpisodes = true
+    }
+    if (settings.homeModulesOrder == undefined) {
+      this.homeModulesOrder = [...DEFAULT_HOME_MODULES_ORDER]
+    }
     if (settings.metadataFileFormat == undefined) {
       // metadataFileFormat was added in 2.2.21
       // All users using old settings will stay abs until changed
@@ -251,6 +326,15 @@ class ServerSettings {
       loggerScannerLogsToKeep: this.loggerScannerLogsToKeep,
       homeBookshelfView: this.homeBookshelfView,
       bookshelfView: this.bookshelfView,
+      homeShowContinueItems: this.homeShowContinueItems,
+      homeShowContinueSeries: this.homeShowContinueSeries,
+      homeShowRecentlyAdded: this.homeShowRecentlyAdded,
+      homeShowRecentSeries: this.homeShowRecentSeries,
+      homeShowDiscover: this.homeShowDiscover,
+      homeShowListenAgain: this.homeShowListenAgain,
+      homeShowNewestAuthors: this.homeShowNewestAuthors,
+      homeShowNewestEpisodes: this.homeShowNewestEpisodes,
+      homeModulesOrder: [...this.homeModulesOrder],
       podcastEpisodeSchedule: this.podcastEpisodeSchedule,
       sortingIgnorePrefix: this.sortingIgnorePrefix,
       sortingPrefixes: [...this.sortingPrefixes],
@@ -366,6 +450,15 @@ class ServerSettings {
     let hasUpdates = false
     for (const key in payload) {
       if (!PATCHABLE_SETTINGS_KEYS.has(key)) continue
+
+      if (key === 'homeModulesOrder') {
+        const normalized = normalizeHomeModulesOrder(payload[key])
+        if (JSON.stringify(this.homeModulesOrder) !== JSON.stringify(normalized)) {
+          this.homeModulesOrder = normalized
+          hasUpdates = true
+        }
+        continue
+      }
 
       if (this[key] !== payload[key]) {
         if (key === 'logLevel') {

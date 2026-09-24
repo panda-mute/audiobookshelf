@@ -11,6 +11,7 @@ const uaParserJs = require('../libs/uaParser')
 const requestIp = require('../libs/requestIp')
 
 const { PlayMethod } = require('../utils/constants')
+const { isStrmPath, readStrmTarget } = require('../utils/strmUtils')
 
 const PlaybackSession = require('../objects/PlaybackSession')
 const DeviceInfo = require('../objects/DeviceInfo')
@@ -82,7 +83,43 @@ class PlaybackSessionManager {
     Logger.debug(`[PlaybackSessionManager] startSessionRequest for device ${deviceInfo.deviceDescription}`)
     const { libraryItem, body: options } = req
     const session = await this.startSession(req.user, deviceInfo, libraryItem, episodeId, options)
-    res.json(session.toJSONForClient(libraryItem))
+    const sessionJson = session.toJSONForClient(libraryItem)
+    await this.resolveStrmPathsForClient(sessionJson)
+    res.json(sessionJson)
+  }
+
+  async resolveStrmPathForClient(mediaFile, resolvedPathCache) {
+    const mediaPath = mediaFile?.metadata?.path
+    if (!isStrmPath(mediaPath)) {
+      return
+    }
+
+    try {
+      let strmTarget = mediaFile.strmTarget || resolvedPathCache.get(mediaPath)
+      if (!strmTarget) {
+        strmTarget = await readStrmTarget(mediaPath)
+        resolvedPathCache.set(mediaPath, strmTarget)
+      }
+      mediaFile.strmTarget = strmTarget
+      mediaFile.metadata.strmPath = mediaPath
+      mediaFile.metadata.path = strmTarget
+    } catch (error) {
+      Logger.warn(`[PlaybackSessionManager] Failed to resolve STRM path "${mediaPath}" for client response: ${error.message}`)
+    }
+  }
+
+  async resolveStrmPathsForClient(sessionJson) {
+    const mediaFiles = [
+      ...(sessionJson.audioTracks || []),
+      ...(sessionJson.libraryItem?.libraryFiles || []),
+      ...(sessionJson.libraryItem?.media?.audioFiles || []),
+      ...(sessionJson.libraryItem?.media?.tracks || [])
+    ]
+
+    const resolvedPathCache = new Map()
+    for (const mediaFile of mediaFiles) {
+      await this.resolveStrmPathForClient(mediaFile, resolvedPathCache)
+    }
   }
 
   /**

@@ -26,6 +26,7 @@ class AudioFile {
     this.channelLayout = null
     this.chapters = []
     this.embeddedCoverArt = null
+    this.strmTarget = null
 
     // Tags scraped from the audio file
     /** @type {AudioMetaTags} */
@@ -56,6 +57,7 @@ class AudioFile {
       error: this.error || null,
       format: this.format,
       duration: this.duration,
+      probeAttempted: !!this.probeAttempted,
       bitRate: this.bitRate,
       language: this.language,
       codec: this.codec,
@@ -64,6 +66,7 @@ class AudioFile {
       channelLayout: this.channelLayout,
       chapters: this.chapters,
       embeddedCoverArt: this.embeddedCoverArt,
+      strmTarget: this.strmTarget,
       metaTags: this.metaTags?.toJSON() || {},
       mimeType: this.mimeType
     }
@@ -96,6 +99,8 @@ class AudioFile {
     this.channelLayout = data.channelLayout
     this.chapters = data.chapters
     this.embeddedCoverArt = data.embeddedCoverArt || null
+    this.strmTarget = data.strmTarget || null
+    this.probeAttempted = !!data.probeAttempted
 
     this.metaTags = new AudioMetaTags(data.metaTags || {})
   }
@@ -133,6 +138,42 @@ class AudioFile {
     this.chapters = probeData.chapters || []
     this.metaTags = probeData.audioMetaTags
     this.embeddedCoverArt = probeData.embeddedCoverArt
+    this.probeAttempted = true
+  }
+
+  setDataWithoutProbe(libraryFile, { duration = 0, size = null, format = null, strmTarget = null } = {}) {
+    this.ino = libraryFile.ino || null
+
+    if (libraryFile.metadata instanceof FileMetadata) {
+      this.metadata = libraryFile.metadata.clone()
+    } else {
+      this.metadata = new FileMetadata(libraryFile.metadata)
+    }
+
+    this.addedAt = Date.now()
+    this.updatedAt = Date.now()
+
+    if (Number.isFinite(size) && size >= 0) {
+      this.metadata.size = size
+    }
+
+    this.format = format || this.metadata.format || null
+    this.duration = Number.isFinite(duration) ? duration : 0
+    this.bitRate = null
+    this.language = null
+    this.codec = null
+    this.timeBase = null
+    this.channels = null
+    this.channelLayout = null
+    this.chapters = []
+    this.metaTags = new AudioMetaTags()
+    this.embeddedCoverArt = null
+    this.strmTarget = strmTarget || null
+    this.probeAttempted = false
+  }
+
+  setDataFromStrm(libraryFile, duration = 0, size = null, strmTarget = null) {
+    this.setDataWithoutProbe(libraryFile, { duration, size, format: 'strm', strmTarget })
   }
 
   syncChapters(updatedChapters) {

@@ -20,10 +20,16 @@
     <div v-show="!processing && !searchResults.length && hasSearched" class="flex h-full items-center justify-center">
       <p>{{ $strings.MessageNoResults }}</p>
     </div>
-    <div v-show="!processing" class="w-full max-h-full overflow-y-auto overflow-x-hidden matchListWrapper mt-4">
+    <div v-show="!processing" class="w-full max-h-full overflow-y-auto overflow-x-hidden matchListWrapper mt-4" ref="matchList" @scroll="onResultsScroll">
       <template v-for="(res, index) in searchResults">
         <cards-book-match-card :key="index" :book="res" :current-book-duration="currentBookDuration" :is-podcast="isPodcast" :book-cover-aspect-ratio="bookCoverAspectRatio" @select="selectMatch" />
       </template>
+      <div v-if="isLoadingMore" class="flex justify-center py-3">
+        <p>{{ $strings.MessageLoading }}</p>
+      </div>
+      <div v-else-if="!isLoadingMore && currentPage < totalPages" class="flex justify-center py-3">
+        <p class="text-gray-400 text-xs">{{ $strings.MessageScrollForMore }}</p>
+      </div>
     </div>
     <div v-if="selectedMatchOrig" class="absolute top-0 left-0 w-full bg-bg h-full px-2 py-6 md:p-8 max-h-full overflow-y-auto overflow-x-hidden">
       <div class="flex mb-4">
@@ -251,6 +257,9 @@ export default {
       provider: 'google',
       searchResults: [],
       hasSearched: false,
+      currentPage: 1,
+      totalPages: 1,
+      isLoadingMore: false,
       selectedMatch: null,
       selectedMatchOrig: null,
       waitingForProviders: false,
@@ -335,6 +344,7 @@ export default {
     searchTitleLabel() {
       if (this.provider.startsWith('audible')) return this.$strings.LabelSearchTitleOrASIN
       else if (this.provider == 'itunes') return this.$strings.LabelSearchTerm
+      else if (this.provider == 'ximalaya' || this.provider == 'qingting') return this.$strings.LabelSearchTitleOrAlbumId
       return this.$strings.LabelSearchTitle
     },
     media() {
@@ -422,11 +432,16 @@ export default {
       this.searchResults = []
       this.isProcessing = true
       this.lastSearch = searchQuery
+      this.currentPage = 1
+      this.totalPages = 1
       const searchEntity = this.isPodcast ? 'podcast' : 'books'
-      let results = await this.$axios.$get(`/api/search/${searchEntity}?${searchQuery}`, { timeout: 20000 }).catch((error) => {
+      const resp = await this.$axios.get(`/api/search/${searchEntity}?${searchQuery}`, { timeout: 20000 }).catch((error) => {
         console.error('Failed', error)
-        return []
+        return null
       })
+      let results = resp?.data || []
+      // 中文 provider 返回 X-Total-Pages 响应头, 用于无限下滑加载更多; 其他 provider 为 1(不触发)
+      this.totalPages = Number(resp?.headers?.['x-total-pages']) || 1
       // console.log('Got search results', results)
       results = (results || []).filter((res) => {
         return !!res.title
@@ -446,6 +461,40 @@ export default {
       this.searchResults = results || []
       this.isProcessing = false
       this.hasSearched = true
+    },
+    // 结果列表滚动到底部时加载下一页(无限下滑)
+    onResultsScroll() {
+      if (this.isLoadingMore || this.currentPage >= this.totalPages) return
+      const el = this.$refs.matchList
+      if (!el) return
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+        this.loadMoreResults()
+      }
+    },
+    async loadMoreResults() {
+      if (this.isLoadingMore || this.currentPage >= this.totalPages) return
+      this.isLoadingMore = true
+      const nextPage = this.currentPage + 1
+      const searchQuery = this.getSearchQuery()
+      const searchEntity = this.isPodcast ? 'podcast' : 'books'
+      const resp = await this.$axios.get(`/api/search/${searchEntity}?${searchQuery}&page=${nextPage}`, { timeout: 20000 }).catch((error) => {
+        console.error('Failed to load more', error)
+        return null
+      })
+      if (!resp) {
+        // 请求失败时不推进页码, 下次滚动重试
+        this.isLoadingMore = false
+        return
+      }
+      const results = (resp.data || []).filter((res) => !!res.title)
+      if (results.length) {
+        // 按 id 去重后拼接
+        const existingIds = new Set(this.searchResults.map((r) => r.id))
+        const newResults = results.filter((r) => !existingIds.has(r.id))
+        this.searchResults = this.searchResults.concat(newResults)
+      }
+      this.currentPage = nextPage
+      this.isLoadingMore = false
     },
     initSelectedMatchUsage() {
       this.selectedMatchUsage = {
@@ -514,6 +563,8 @@ export default {
       if (this.libraryItem.id !== this.libraryItemId) {
         this.searchResults = []
         this.hasSearched = false
+        this.currentPage = 1
+        this.totalPages = 1
         this.libraryItemId = this.libraryItem.id
       }
 

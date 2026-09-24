@@ -5,6 +5,8 @@ const iTunes = require('../providers/iTunes')
 const Audnexus = require('../providers/Audnexus')
 const FantLab = require('../providers/FantLab')
 const AudiobookCovers = require('../providers/AudiobookCovers')
+const Ximalaya = require('../providers/Ximalaya')
+const QingTing = require('../providers/QingTing')
 const CustomProviderAdapter = require('../providers/CustomProviderAdapter')
 const Logger = require('../Logger')
 const { levenshteinDistance, levenshteinSimilarity, escapeRegExp, isValidASIN } = require('../utils/index')
@@ -21,9 +23,11 @@ class BookFinder {
     this.audnexus = new Audnexus()
     this.fantLab = new FantLab()
     this.audiobookCovers = new AudiobookCovers()
+    this.ximalaya = new Ximalaya()
+    this.qingTing = new QingTing()
     this.customProviderAdapter = new CustomProviderAdapter()
 
-    this.providers = ['google', 'itunes', 'openlibrary', 'fantlab', 'audiobookcovers', 'audible', 'audible.ca', 'audible.uk', 'audible.au', 'audible.fr', 'audible.de', 'audible.jp', 'audible.it', 'audible.in', 'audible.es']
+    this.providers = ['google', 'itunes', 'openlibrary', 'fantlab', 'audiobookcovers', 'audible', 'audible.ca', 'audible.uk', 'audible.au', 'audible.fr', 'audible.de', 'audible.jp', 'audible.it', 'audible.in', 'audible.es', 'ximalaya', 'qingting']
 
     this.verbose = false
   }
@@ -176,6 +180,40 @@ class BookFinder {
    */
   async getiTunesAudiobooksResults(title) {
     return this.iTunesApi.searchAudiobooks(title, this.#providerResponseTimeout)
+  }
+
+  /**
+   * 喜马拉雅 provider 结果(albumId/专辑 URL 精确匹配, 或受限的通用搜索)
+   * @param {string} title
+   * @param {string} [author]
+   */
+  async getXimalayaResults(title, author) {
+    const result = await this.ximalaya.search(title, author, this.#providerResponseTimeout)
+    return result?.books || []
+  }
+
+  /**
+   * 蜻蜓FM provider 结果(书名搜索, 或频道 URL/ID 精确匹配)
+   * @param {string} title
+   * @param {string} [author]
+   */
+  async getQingTingResults(title, author) {
+    const result = await this.qingTing.search(title, author, this.#providerResponseTimeout)
+    return result?.books || []
+  }
+
+  /**
+   * 分页搜索结果(用于支持"无限下滑加载更多"的中文 provider)
+   * @param {string} provider
+   * @param {string} title
+   * @param {string} [author]
+   * @param {number} [page]
+   * @returns {Promise<{books: Object[], totalPages: number}>}
+   */
+  async searchWithPaging(provider, title, author, page = 1) {
+    if (provider === 'ximalaya') return this.ximalaya.search(title, author, this.#providerResponseTimeout, page)
+    if (provider === 'qingting') return this.qingTing.search(title, author, this.#providerResponseTimeout, page)
+    return { books: [], totalPages: 1 }
   }
 
   /**
@@ -592,6 +630,10 @@ class BookFinder {
       books = await this.getFantLabResults(title, author)
     } else if (provider === 'audiobookcovers') {
       books = await this.getAudiobookCoversResults(title)
+    } else if (provider === 'ximalaya') {
+      books = await this.getXimalayaResults(title, author)
+    } else if (provider === 'qingting') {
+      books = await this.getQingTingResults(title, author)
     } else {
       books = await this.getGoogleBooksResults(title, author)
     }
@@ -615,8 +657,8 @@ class BookFinder {
         searchResults.push(...providerResults)
       }
     } else if (provider === 'best') {
-      // Best providers: google, fantlab, and audible.com
-      const bestProviders = ['google', 'fantlab', 'audible']
+      // Best providers: google, fantlab, audible, and Chinese providers (ximalaya, qingting)
+      const bestProviders = ['google', 'fantlab', 'audible', 'ximalaya', 'qingting']
       for (const providerString of bestProviders) {
         const providerResults = await this.search(null, providerString, title, author, options)
         Logger.debug(`[BookFinder] Found ${providerResults.length} covers from ${providerString}`)

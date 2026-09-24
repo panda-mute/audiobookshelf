@@ -25,7 +25,9 @@ const providerMap = {
   'audible.it': 'Audible.it',
   'audible.in': 'Audible.in',
   'audible.es': 'Audible.es',
-  audnexus: 'Audnexus'
+  audnexus: 'Audnexus',
+  ximalaya: '喜马拉雅 (Ximalaya)',
+  qingting: '蜻蜓FM'
 }
 
 /**
@@ -89,6 +91,14 @@ class SearchController {
       const title = getQueryParamAsString(query, 'title', '')
       const author = getQueryParamAsString(query, 'author', '')
       const id = getQueryParamAsString(query, 'id', undefined)
+      const page = Number(req.query.page) || 1
+
+      // 喜马拉雅 / 蜻蜓FM 支持分页(前端"无限下滑"加载更多), 返回总页数头
+      if ((provider === 'ximalaya' || provider === 'qingting') && page >= 1) {
+        const paged = await BookFinder.searchWithPaging(provider, title, author, page)
+        res.setHeader('X-Total-Pages', String(paged.totalPages))
+        return res.json(paged.books)
+      }
 
       // Fetch library item
       const libraryItem = id ? await SearchController.fetchLibraryItem(id) : null

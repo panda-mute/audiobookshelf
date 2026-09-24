@@ -1,6 +1,7 @@
 const { DataTypes, Model } = require('sequelize')
 const { getTitlePrefixAtEnd, getTitleIgnorePrefix } = require('../utils')
 const Logger = require('../Logger')
+const { isCloudMountPath, isProbeSkippedPath } = require('../utils/strmUtils')
 const libraryItemsPodcastFilters = require('../utils/queries/libraryItemsPodcastFilters')
 const htmlSanitizer = require('../utils/htmlSanitizer')
 
@@ -309,6 +310,9 @@ class Podcast extends Model {
       Logger.error(`[Podcast] checkCanDirectPlay: episode not found`, episodeId)
       return false
     }
+    const ext = episode.audioFile.metadata.ext?.toLowerCase()
+    if (ext === '.strm') return true
+    if (isCloudMountPath(episode.audioFile.metadata.path) || isProbeSkippedPath(episode.audioFile.metadata.path)) return true
     return supportedMimeTypes.includes(episode.audioFile.mimeType)
   }
 

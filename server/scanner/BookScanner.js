@@ -17,6 +17,7 @@ const fsExtra = require('../libs/fsExtra')
 const EBookFile = require('../objects/files/EBookFile')
 const AudioFile = require('../objects/files/AudioFile')
 const LibraryFile = require('../objects/files/LibraryFile')
+const { isStrmPath, readStrmTarget, getStrmTargetSize } = require('../utils/strmUtils')
 
 const RssFeedManager = require('../managers/RssFeedManager')
 const CoverManager = require('../managers/CoverManager')
@@ -51,6 +52,136 @@ const AbsMetadataFileScanner = require('./AbsMetadataFileScanner')
 
 class BookScanner {
   constructor() {}
+
+  getDurationFromChapters(chapters) {
+    if (!Array.isArray(chapters) || !chapters.length) return 0
+
+    return chapters.reduce((duration, chapter) => {
+      const end = Number(chapter?.end)
+      return Number.isFinite(end) && end > duration ? end : duration
+    }, 0)
+  }
+
+  getDurationFromAudioFiles(audioFiles) {
+    return audioFiles.reduce((duration, audioFile) => {
+      const audioFileDuration = Number(audioFile.duration)
+      return duration + (Number.isFinite(audioFileDuration) && audioFileDuration > 0 ? audioFileDuration : 0)
+    }, 0)
+  }
+
+  getSizeFromBookFiles(audioFiles, ebookFile = null) {
+    const audioSize = audioFiles.reduce((size, audioFile) => {
+      const audioFileSize = Number(audioFile.metadata?.size)
+      return size + (Number.isFinite(audioFileSize) && audioFileSize > 0 ? audioFileSize : 0)
+    }, 0)
+
+    const ebookSize = Number(ebookFile?.metadata?.size)
+    return audioSize + (Number.isFinite(ebookSize) && ebookSize > 0 ? ebookSize : 0)
+  }
+
+  hasPositiveDuration(audioFile) {
+    const duration = Number(audioFile?.duration)
+    return Number.isFinite(duration) && duration > 0
+  }
+
+  isStrmAudioFile(audioFile) {
+    return isStrmPath(audioFile?.metadata?.path)
+  }
+
+  async refreshStrmTargetSizes(audioFiles, libraryScan, bookTitle) {
+    if (!AudioFileScanner.shouldReadStrmUrlSize) return false
+
+    const strmAudioFiles = audioFiles.filter((audioFile) => this.isStrmAudioFile(audioFile) && !audioFile.exclude)
+    if (!strmAudioFiles.length) return false
+
+    let updatedCount = 0
+    const batchSize = 16
+    for (let batch = 0; batch < strmAudioFiles.length; batch += batchSize) {
+      const files = strmAudioFiles.slice(batch, batch + batchSize)
+      await Promise.all(
+        files.map(async (audioFile) => {
+          try {
+            const target = audioFile.strmTarget || (await readStrmTarget(audioFile.metadata.path))
+            const targetSize = await getStrmTargetSize(target)
+            if (!Number.isFinite(targetSize) || targetSize <= 0 || Number(audioFile.metadata.size) === targetSize) return
+            audioFile.metadata.size = targetSize
+            updatedCount++
+          } catch (error) {
+            libraryScan.addLog(LogLevel.DEBUG, `Unable to refresh STRM target size for "${audioFile.metadata.path}": ${error.message}`)
+          }
+        })
+      )
+    }
+
+    if (updatedCount) {
+      libraryScan.addLog(LogLevel.INFO, `Updated real target sizes for ${updatedCount} STRM audio file(s) in book "${bookTitle}"`)
+    }
+    return updatedCount > 0
+  }
+
+  setStrmAudioFileDurationsFromChapters(audioFiles, chapters, libraryScan, bookTitle) {
+    if (!Array.isArray(audioFiles) || !audioFiles.length || !Array.isArray(chapters) || !chapters.length) return false
+
+    const includedAudioFiles = audioFiles.filter((audioFile) => !audioFile.exclude).sort((a, b) => a.index - b.index)
+    const strmAudioFiles = includedAudioFiles.filter((audioFile) => this.isStrmAudioFile(audioFile))
+    if (!strmAudioFiles.length) return false
+
+    let hasUpdates = false
+    if (includedAudioFiles.length === 1) {
+      const totalDuration = this.getDurationFromChapters(chapters)
+      const audioFile = includedAudioFiles[0]
+      if (totalDuration && this.isStrmAudioFile(audioFile) && (!this.hasPositiveDuration(audioFile) || Math.abs(Number(audioFile.duration) - totalDuration) > 0.01)) {
+        audioFile.duration = totalDuration
+        hasUpdates = true
+      }
+    } else if (includedAudioFiles.length === chapters.length) {
+      includedAudioFiles.forEach((audioFile, index) => {
+        if (!this.isStrmAudioFile(audioFile)) return
+
+        const chapterDuration = Number(chapters[index].end) - Number(chapters[index].start)
+        if (!Number.isFinite(chapterDuration) || chapterDuration <= 0) return
+
+        const currentDuration = Number(audioFile.duration)
+        if (!Number.isFinite(currentDuration) || Math.abs(currentDuration - chapterDuration) > 0.01) {
+          audioFile.duration = chapterDuration
+          hasUpdates = true
+        }
+      })
+    }
+
+    if (hasUpdates) {
+      libraryScan.addLog(LogLevel.DEBUG, `Set STRM audio file durations from metadata chapters for book "${bookTitle}"`)
+    }
+    return hasUpdates
+  }
+
+  async probeStrmAudioFilesMissingMetadata(audioFiles, libraryItemData, libraryScan, bookTitle) {
+    const strmAudioFilesMissingDuration = audioFiles.filter((audioFile) => this.isStrmAudioFile(audioFile) && !audioFile.exclude && !this.hasPositiveDuration(audioFile))
+    if (!strmAudioFilesMissingDuration.length) return false
+
+    const libraryFilesToProbe = strmAudioFilesMissingDuration
+      .map((audioFile) => libraryItemData.audioLibraryFiles.find((libraryFile) => libraryFile.metadata.path === audioFile.metadata.path || libraryFile.ino === audioFile.ino))
+      .filter(Boolean)
+    if (!libraryFilesToProbe.length) return false
+
+    libraryScan.addLog(LogLevel.DEBUG, `No usable metadata duration found for ${libraryFilesToProbe.length} STRM audio file(s) in book "${bookTitle}". Probing STRM target audio as fallback.`)
+    const probedAudioFiles = await AudioFileScanner.executeMediaFileScans(libraryItemData.mediaType, libraryItemData, libraryFilesToProbe, {
+      forceProbeStrmTargets: true,
+      forceProbeSkippedPaths: true
+    })
+    if (!probedAudioFiles.length) return false
+
+    let hasUpdates = false
+    for (const probedAudioFile of probedAudioFiles) {
+      const index = audioFiles.findIndex((audioFile) => audioFile.metadata.path === probedAudioFile.metadata.path || audioFile.ino === probedAudioFile.ino)
+      if (index === -1) continue
+      const existingIndex = audioFiles[index].index
+      probedAudioFile.index = existingIndex
+      audioFiles[index] = probedAudioFile
+      hasUpdates = true
+    }
+    return hasUpdates
+  }
 
   /**
    * @param {import('../models/LibraryItem')} existingLibraryItem
@@ -136,14 +267,14 @@ class BookScanner {
 
       media.audioFiles = AudioFileScanner.runSmartTrackOrder(existingLibraryItem.relPath, media.audioFiles)
 
-      media.duration = 0
-      media.audioFiles.forEach((af) => {
-        if (!isNaN(af.duration)) {
-          media.duration += af.duration
-        }
-      })
+      media.duration = this.getDurationFromAudioFiles(media.audioFiles)
 
       media.changed('audioFiles', true)
+    }
+
+    if (await this.refreshStrmTargetSizes(media.audioFiles, libraryScan, media.title)) {
+      media.changed('audioFiles', true)
+      hasMediaChanges = true
     }
 
     // Check if cover was removed
@@ -340,6 +471,23 @@ class BookScanner {
       }
     }
 
+    if (this.setStrmAudioFileDurationsFromChapters(media.audioFiles, media.chapters, libraryScan, media.title)) {
+      media.duration = this.getDurationFromChapters(media.chapters) || this.getDurationFromAudioFiles(media.audioFiles)
+      media.changed('audioFiles', true)
+      hasMediaChanges = true
+    } else {
+      const durationFromChapters = this.getDurationFromChapters(media.chapters)
+      if (durationFromChapters && Math.abs(Number(media.duration || 0) - durationFromChapters) > 0.01) {
+        media.duration = durationFromChapters
+        hasMediaChanges = true
+      }
+    }
+    if (await this.probeStrmAudioFilesMissingMetadata(media.audioFiles, libraryItemData, libraryScan, media.title)) {
+      media.duration = this.getDurationFromChapters(media.chapters) || this.getDurationFromAudioFiles(media.audioFiles)
+      media.changed('audioFiles', true)
+      hasMediaChanges = true
+    }
+
     // Load authors/series again if updated (for sending back to client)
     if (authorsUpdated) {
       media.authors = await media.getAuthors({
@@ -388,6 +536,11 @@ class BookScanner {
     existingLibraryItem.media = media
 
     let libraryItemUpdated = false
+    const sizeFromBookFiles = this.getSizeFromBookFiles(media.audioFiles, media.ebookFile)
+    if (sizeFromBookFiles && Number(existingLibraryItem.size || 0) !== sizeFromBookFiles) {
+      existingLibraryItem.size = sizeFromBookFiles
+      libraryItemUpdated = true
+    }
 
     // Save Book changes to db
     if (hasMediaChanges) {
@@ -469,8 +622,9 @@ class BookScanner {
     bookMetadata.explicit = !!bookMetadata.explicit // Ensure boolean
     bookMetadata.abridged = !!bookMetadata.abridged // Ensure boolean
 
-    let duration = 0
-    scannedAudioFiles.forEach((af) => (duration += !isNaN(af.duration) ? Number(af.duration) : 0))
+    this.setStrmAudioFileDurationsFromChapters(scannedAudioFiles, bookMetadata.chapters, libraryScan, bookMetadata.title)
+    await this.probeStrmAudioFilesMissingMetadata(scannedAudioFiles, libraryItemData, libraryScan, bookMetadata.title)
+    const duration = this.getDurationFromChapters(bookMetadata.chapters) || this.getDurationFromAudioFiles(scannedAudioFiles)
     const bookObject = {
       ...bookMetadata,
       audioFiles: scannedAudioFiles,
@@ -533,6 +687,7 @@ class BookScanner {
     libraryItemObj.isMissing = false
     libraryItemObj.isInvalid = false
     libraryItemObj.extraData = {}
+    libraryItemObj.size = this.getSizeFromBookFiles(scannedAudioFiles, ebookLibraryFile)
     libraryItemObj.title = bookMetadata.title
     libraryItemObj.titleIgnorePrefix = getTitleIgnorePrefix(bookMetadata.title)
     libraryItemObj.authorNamesFirstLast = bookMetadata.authors.join(', ')

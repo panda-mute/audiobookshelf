@@ -1,6 +1,7 @@
 const { DataTypes, Model } = require('sequelize')
 const Logger = require('../Logger')
 const { getTitlePrefixAtEnd, getTitleIgnorePrefix } = require('../utils')
+const { isCloudMountPath, isProbeSkippedPath } = require('../utils/strmUtils')
 const parseNameString = require('../utils/parsers/parseNameString')
 const htmlSanitizer = require('../utils/htmlSanitizer')
 const libraryItemsBookFilters = require('../utils/queries/libraryItemsBookFilters')
@@ -280,7 +281,14 @@ class Book extends Model {
       Logger.error(`[Book] checkCanDirectPlay: supportedMimeTypes is not an array`, supportedMimeTypes)
       return false
     }
-    return this.includedAudioFiles.every((af) => supportedMimeTypes.includes(af.mimeType))
+    return this.includedAudioFiles.every((af) => {
+      const ext = af.metadata.ext?.toLowerCase()
+      if (ext === '.strm') return true
+      // Cloud-mounted / probe-skipped files: always direct play, no MIME check needed.
+      // res.sendFile handles Range requests natively — no transcoding required.
+      if (isCloudMountPath(af.metadata.path) || isProbeSkippedPath(af.metadata.path)) return true
+      return supportedMimeTypes.includes(af.mimeType)
+    })
   }
 
   /**
@@ -297,8 +305,21 @@ class Book extends Model {
       track.title = af.metadata.filename
       track.startOffset = startOffset
       track.contentUrl = `/api/items/${libraryItemId}/file/${track.ino}`
+      if (track.strmTarget && track.metadata) {
+        track.metadata.path = track.strmTarget
+      }
       startOffset += track.duration
       return track
+    })
+  }
+
+  getAudioFilesForClient() {
+    return structuredClone(this.audioFiles).map((audioFile) => {
+      if (audioFile.strmTarget && audioFile.metadata) {
+        audioFile.metadata.strmPath = audioFile.metadata.path
+        audioFile.metadata.path = audioFile.strmTarget
+      }
+      return audioFile
     })
   }
 
@@ -626,7 +647,7 @@ class Book extends Model {
       metadata: this.oldMetadataToJSON(),
       coverPath: this.coverPath,
       tags: [...(this.tags || [])],
-      audioFiles: structuredClone(this.audioFiles),
+      audioFiles: this.getAudioFilesForClient(),
       chapters: structuredClone(this.chapters),
       ebookFile: structuredClone(this.ebookFile)
     }
@@ -680,7 +701,9 @@ class Book extends Model {
       ...this.toOldJSONMinified(),
       libraryItemId,
       metadata: this.oldMetadataToJSONExpanded(),
-      audioFiles: structuredClone(this.audioFiles),
+      coverPath: this.coverPath,
+      tags: [...(this.tags || [])],
+      audioFiles: this.getAudioFilesForClient(),
       chapters: structuredClone(this.chapters),
       ebookFile: structuredClone(this.ebookFile),
       tracks: this.getTracklist(libraryItemId)

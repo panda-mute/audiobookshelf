@@ -82,7 +82,10 @@ class Library extends Model {
   }
 
   static get defaultMetadataPrecedence() {
-    return ['folderStructure', 'audioMetatags', 'nfoFile', 'txtFiles', 'opfFile', 'absMetadata']
+    // Lowest priority first, highest priority last.
+    // audioMetatags requires ffprobe (triggers cloud download) so it goes first (lowest priority).
+    // Sidecar metadata files (nfo/opf/absMetadata) go last so they always win.
+    return ['audioMetatags', 'folderStructure', 'txtFiles', 'nfoFile', 'opfFile', 'absMetadata']
   }
 
   /**

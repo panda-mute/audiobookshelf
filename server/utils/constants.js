@@ -54,5 +54,7 @@ module.exports.AudioMimeType = {
   AWB: 'audio/amr-wb',
   CAF: 'audio/x-caf',
   MPEG: 'audio/mpeg',
-  MPG: 'audio/mpeg'
+  MPG: 'audio/mpeg',
+  WAV: 'audio/wav',
+  STRM: 'application/x-audiobookshelf-strm'
 }

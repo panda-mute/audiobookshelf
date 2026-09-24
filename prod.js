@@ -19,7 +19,7 @@ global.appRoot = __dirname
 var inputConfig = options.config ? Path.resolve(options.config) : null
 var inputMetadata = options.metadata ? Path.resolve(options.metadata) : null
 
-const PORT = options.port || process.env.PORT || 3333
+const PORT = options.port || process.env.PORT || 2048
 const HOST = options.host || process.env.HOST
 const CONFIG_PATH = inputConfig || process.env.CONFIG_PATH || Path.resolve('config')
 const METADATA_PATH = inputMetadata || process.env.METADATA_PATH || Path.resolve('metadata')

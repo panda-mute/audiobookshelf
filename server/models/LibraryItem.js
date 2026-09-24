@@ -351,7 +351,7 @@ class LibraryItem extends Model {
 
     // "Continue Listening" shelf
     const itemsInProgressPayload = await libraryFilters.getMediaItemsInProgress(library, user, include, limit, false)
-    if (itemsInProgressPayload.items.length) {
+    if (global.ServerSettings.homeShowContinueItems && itemsInProgressPayload.items.length) {
       const ebookOnlyItemsInProgress = itemsInProgressPayload.items.filter((li) => li.media.ebookFormat && !li.media.numTracks)
       const audioItemsInProgress = itemsInProgressPayload.items.filter((li) => li.media.numTracks || li.mediaType === 'podcast')
 
@@ -392,7 +392,7 @@ class LibraryItem extends Model {
 
       const continueSeriesPayload = continueSeriesResult.payload
       // "Continue Series" shelf
-      if (continueSeriesPayload.libraryItems.length) {
+      if (global.ServerSettings.homeShowContinueSeries && continueSeriesPayload.libraryItems.length) {
         shelves.push({
           id: 'continue-series',
           label: 'Continue Series',
@@ -406,7 +406,7 @@ class LibraryItem extends Model {
 
       const mostRecentPayload = mostRecentResult.payload
       // "Recently Added" shelf
-      if (mostRecentPayload.libraryItems.length) {
+      if (global.ServerSettings.homeShowRecentlyAdded && mostRecentPayload.libraryItems.length) {
         shelves.push({
           id: 'recently-added',
           label: 'Recently Added',
@@ -420,7 +420,7 @@ class LibraryItem extends Model {
 
       const seriesMostRecentPayload = seriesMostRecentResult.payload
       // "Recent Series" shelf
-      if (seriesMostRecentPayload.series.length) {
+      if (global.ServerSettings.homeShowRecentSeries && seriesMostRecentPayload.series.length) {
         shelves.push({
           id: 'recent-series',
           label: 'Recent Series',
@@ -434,7 +434,7 @@ class LibraryItem extends Model {
 
       const discoverLibraryItemsPayload = discoverResult.payload
       // "Discover" shelf
-      if (discoverLibraryItemsPayload.libraryItems.length) {
+      if (global.ServerSettings.homeShowDiscover && discoverLibraryItemsPayload.libraryItems.length) {
         shelves.push({
           id: 'discover',
           label: 'Discover',
@@ -448,7 +448,7 @@ class LibraryItem extends Model {
 
       const mediaFinishedPayload = mediaFinishedResult.payload
       // "Listen Again" shelf
-      if (mediaFinishedPayload.items.length) {
+      if (global.ServerSettings.homeShowListenAgain && mediaFinishedPayload.items.length) {
         const ebookOnlyItemsInProgress = mediaFinishedPayload.items.filter((li) => li.media.ebookFormat && !li.media.numTracks)
         const audioItemsInProgress = mediaFinishedPayload.items.filter((li) => li.media.numTracks || li.mediaType === 'podcast')
 
@@ -479,7 +479,7 @@ class LibraryItem extends Model {
 
       const newestAuthorsPayload = newestAuthorsResult.payload
       // "Newest Authors" shelf
-      if (newestAuthorsPayload.authors.length) {
+      if (global.ServerSettings.homeShowNewestAuthors && newestAuthorsPayload.authors.length) {
         shelves.push({
           id: 'newest-authors',
           label: 'Newest Authors',
@@ -495,7 +495,7 @@ class LibraryItem extends Model {
 
       const newestEpisodesPayload = newestEpisodesResult.payload
       // "Newest Episodes" shelf
-      if (newestEpisodesPayload.libraryItems.length) {
+      if (global.ServerSettings.homeShowNewestEpisodes && newestEpisodesPayload.libraryItems.length) {
         shelves.push({
           id: 'newest-episodes',
           label: 'Newest Episodes',
@@ -509,7 +509,7 @@ class LibraryItem extends Model {
 
       const mostRecentPayload = mostRecentResult.payload
       // "Recently Added" shelf
-      if (mostRecentPayload.libraryItems.length) {
+      if (global.ServerSettings.homeShowRecentlyAdded && mostRecentPayload.libraryItems.length) {
         shelves.push({
           id: 'recently-added',
           label: 'Recently Added',
@@ -523,7 +523,7 @@ class LibraryItem extends Model {
 
       const mediaFinishedPayload = mediaFinishedResult.payload
       // "Listen Again" shelf
-      if (mediaFinishedPayload.items.length) {
+      if (global.ServerSettings.homeShowListenAgain && mediaFinishedPayload.items.length) {
         const ebookOnlyItemsInProgress = mediaFinishedPayload.items.filter((li) => li.media.ebookFormat && !li.media.numTracks)
         const audioItemsInProgress = mediaFinishedPayload.items.filter((li) => li.media.numTracks || li.mediaType === 'podcast')
 
