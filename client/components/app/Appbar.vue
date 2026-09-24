@@ -3,7 +3,7 @@
     <div id="appbar" role="toolbar" aria-label="Appbar" class="absolute top-0 bottom-0 left-0 w-full h-full px-2 md:px-6 py-1 z-60">
       <div class="flex h-full items-center">
         <nuxt-link to="/">
-          <img src="~static/icon.svg" :alt="$strings.ButtonHome" class="w-8 min-w-8 h-8 mr-2 sm:w-10 sm:min-w-10 sm:h-10 sm:mr-4" />
+          <img :src="uiLogoSrc" :alt="$strings.ButtonHome" class="w-8 min-w-8 h-8 mr-2 sm:w-10 sm:min-w-10 sm:h-10 sm:mr-4 app-logo" />
         </nuxt-link>
 
         <nuxt-link to="/">
@@ -23,6 +23,20 @@
         </div>
 
         <widgets-notification-widget class="hidden md:block" />
+
+        <button type="button" class="theme-switcher hover:text-gray-200 cursor-pointer h-9 hidden sm:flex items-center justify-center mx-1 px-2" :aria-label="uiThemeTooltip" @click="cycleUiTheme">
+          <ui-tooltip :text="uiThemeTooltip" direction="bottom" class="flex items-center">
+            <span class="material-symbols text-2xl" role="img" aria-hidden="true">palette</span>
+            <span class="hidden xl:inline-block ml-1.5 text-sm leading-none">{{ uiThemeName }}</span>
+          </ui-tooltip>
+        </button>
+
+        <button type="button" class="logo-switcher hover:text-gray-200 cursor-pointer h-9 hidden sm:flex items-center justify-center mx-1 px-2" :aria-label="uiLogoTooltip" @click="cycleUiLogo">
+          <ui-tooltip :text="uiLogoTooltip" direction="bottom" class="flex items-center">
+            <img :src="uiLogoSrc" alt="" class="w-5 h-5" />
+            <span class="hidden xl:inline-block ml-1.5 text-sm leading-none">{{ uiLogoName }}</span>
+          </ui-tooltip>
+        </button>
 
         <nuxt-link v-if="currentLibrary" to="/config/stats" class="hover:text-gray-200 cursor-pointer w-8 h-8 hidden sm:flex items-center justify-center mx-1">
           <ui-tooltip :text="$strings.HeaderYourStats" direction="bottom" class="flex items-center">
@@ -87,7 +101,9 @@
 export default {
   data() {
     return {
-      totalEntities: 0
+      totalEntities: 0,
+      uiTheme: 'nebula',
+      uiLogo: 'classic'
     }
   },
   computed: {
@@ -117,6 +133,21 @@ export default {
     },
     username() {
       return this.user ? this.user.username : 'err'
+    },
+    uiThemeTooltip() {
+      return `UI 主题：${this.$uiTheme.getLabel(this.uiTheme)}`
+    },
+    uiThemeName() {
+      return this.$uiTheme.getLabel(this.uiTheme).split(' ')[0]
+    },
+    uiLogoTooltip() {
+      return `Logo：${this.$uiLogo.getLabel(this.uiLogo)}`
+    },
+    uiLogoName() {
+      return this.$uiLogo.getLabel(this.uiLogo).slice(0, 2)
+    },
+    uiLogoSrc() {
+      return this.$uiLogo.getSrc(this.uiLogo)
     },
     numMediaItemsSelected() {
       return this.selectedMediaItems.length
@@ -193,6 +224,18 @@ export default {
     }
   },
   methods: {
+    cycleUiTheme() {
+      const themes = this.$uiTheme.themes
+      const currentIndex = themes.indexOf(this.uiTheme)
+      const nextTheme = themes[(currentIndex + 1) % themes.length]
+      this.uiTheme = this.$uiTheme.set(nextTheme)
+    },
+    cycleUiLogo() {
+      const logos = this.$uiLogo.logos
+      const currentIndex = logos.indexOf(this.uiLogo)
+      const nextLogo = logos[(currentIndex + 1) % logos.length]
+      this.uiLogo = this.$uiLogo.set(nextLogo)
+    },
     requestBatchQuickEmbed() {
       const payload = {
         message: this.$strings.MessageConfirmQuickEmbed,
@@ -379,6 +422,8 @@ export default {
     }
   },
   mounted() {
+    this.uiTheme = this.$uiTheme.get()
+    this.uiLogo = this.$uiLogo.get()
     this.$eventBus.$on('bookshelf-total-entities', this.setBookshelfTotalEntities)
   },
   beforeDestroy() {

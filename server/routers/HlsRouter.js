@@ -71,7 +71,17 @@ class HlsRouter {
       return res.sendStatus(400)
     }
 
-    if (!(await fs.pathExists(fullFilePath))) {
+    let resolvedFilePath = fullFilePath
+    if (!(await fs.pathExists(resolvedFilePath))) {
+      if (req.params.file === 'output.m3u8') {
+        const fallbackPlaylistPath = Path.join(streamDir, 'final-output.m3u8')
+        if (await fs.pathExists(fallbackPlaylistPath)) {
+          resolvedFilePath = fallbackPlaylistPath
+        }
+      }
+    }
+
+    if (!(await fs.pathExists(resolvedFilePath))) {
       Logger.warn('File path does not exist', fullFilePath)
 
       if (fileExt === '.ts') {
@@ -94,7 +104,7 @@ class HlsRouter {
       return res.sendStatus(404)
     }
 
-    res.sendFile(fullFilePath)
+    res.sendFile(resolvedFilePath)
   }
 }
 module.exports = HlsRouter

@@ -1,0 +1,107 @@
+name: Auto Update STRM from Upstream
+
+# 定时轮询官方 advplyr/audiobookshelf 的最新 release，
+# 自动把 strm 定制改动 rebase 到最新版本、打 tag 并触发镜像构建。
+# - 无新版本：什么都不做。
+# - 有新版本且无冲突：自动更新 strm 分支 + 打 strm-vX.Y.Z tag + 构建推送镜像。
+# - 有冲突：中止、不破坏代码，并自动开 issue 提醒你人工 rebase 一次。
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'   # 每 2 小时检查一次（公开仓库 Actions 免费，可自行调整）
+  workflow_dispatch:        # 也支持在 Actions 页手动触发
+
+concurrency:
+  group: auto-update-strm
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    outputs:
+      updated: ${{ steps.rebase.outputs.updated }}
+      version: ${{ steps.rebase.outputs.version }}
+      strmtag: ${{ steps.rebase.outputs.strmtag }}
+    steps:
+      - name: 检出 strm 分支（含完整历史）
+        uses: actions/checkout@v4
+        with:
+          ref: strm
+          fetch-depth: 0
+
+      - name: 配置 git 身份
+        run: |
+          git config user.name "strm-auto-update[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 添加 upstream 并拉取官方 tags
+        run: |
+          git remote add upstream https://github.com/advplyr/audiobookshelf.git || true
+          git fetch upstream --tags --force --quiet
+
+      - name: 获取官方最新发布版本
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          L=$(gh api repos/advplyr/audiobookshelf/releases/latest --jq .tag_name)
+          echo "官方最新 release: $L"
+          echo "tag=$L" >> "$GITHUB_OUTPUT"
+
+      - name: rebase 定制改动到最新版本
+        id: rebase
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          L="${{ steps.latest.outputs.tag }}"     # 例如 v2.36.0
+          VER="${L#v}"                            # 2.36.0
+          STRMTAG="strm-${L}"                     # strm-v2.36.0
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "strmtag=$STRMTAG" >> "$GITHUB_OUTPUT"
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+
+          # 已经构建过该版本 -> 跳过
+          if git ls-remote --exit-code --tags origin "refs/tags/$STRMTAG" >/dev/null 2>&1; then
+            echo "✅ $STRMTAG 已存在，已是最新，无需更新"
+            exit 0
+          fi
+
+          # 官方 tag 必须存在
+          if ! git rev-parse -q --verify "refs/tags/$L" >/dev/null; then
+            echo "Official tag $L was not found; skipping"
+            exit 0
+          fi
+
+          git checkout strm
+          if git rebase "$L"; then
+            git tag "$STRMTAG"
+            git push origin strm --force-with-lease
+            git push origin "$STRMTAG"
+            sed -i "s/updated=false/updated=true/" "$GITHUB_OUTPUT"
+            echo "🎉 已把定制改动更新到 $L 并打 tag $STRMTAG"
+          else
+            git rebase --abort || true
+            echo "❌ rebase 到 $L 出现冲突，已中止，未改动 strm"
+            # 同版本若已有未关闭的 issue 则不重复创建
+            EXIST=$(gh issue list --state open --search "\"$L\" in:title" --json number --jq 'length')
+            if [ "$EXIST" = "0" ]; then
+              BODY=$(printf '自动把 strm 定制改动 rebase 到官方 `%s` 时发生**冲突**，已自动中止（strm 分支未被改动，镜像不受影响）。\n\n请在本地解决一次冲突：\n```bash\ncd abs-strm\ngit fetch upstream --tags\ngit checkout strm\ngit rebase %s\n# 手动解决冲突后：\ngit add <冲突文件>\ngit rebase --continue\ngit tag %s\ngit push origin strm --force-with-lease\ngit push origin %s\n```\n推送后会自动构建并推送镜像 `%s` + `latest`。' "$L" "$L" "$STRMTAG" "$STRMTAG" "$VER")
+              gh issue create --title "⚠️ 自动更新冲突：官方 $L 需人工 rebase" --body "$BODY"
+            fi
+          fi
+
+  build:
+    needs: update
+    if: needs.update.outputs.updated == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-strm-image.yml
+    with:
+      ref: ${{ needs.update.outputs.strmtag }}
+      image_tag: ${{ needs.update.outputs.version }}

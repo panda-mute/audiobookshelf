@@ -62,7 +62,14 @@ export default {
       tooltip.id = this.tooltipId
       tooltip.className = 'tooltip-wrapper absolute px-2 py-1 text-white text-xs rounded-sm shadow-lg max-w-xs text-center hidden sm:block'
       tooltip.style.zIndex = 100
-      tooltip.style.backgroundColor = 'rgba(0,0,0,0.85)'
+      if (document?.body?.dataset?.uiTheme && document.body.dataset.uiTheme !== 'classic') {
+        tooltip.style.backgroundColor = 'rgba(22, 27, 40, 0.92)'
+        tooltip.style.color = 'rgb(244, 247, 255)'
+        tooltip.style.border = '1px solid rgba(148, 163, 184, 0.28)'
+        tooltip.style.backdropFilter = 'blur(14px)'
+      } else {
+        tooltip.style.backgroundColor = 'rgba(0,0,0,0.85)'
+      }
       if (this.plaintext) {
         tooltip.textContent = this.text
       } else {

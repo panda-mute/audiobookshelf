@@ -11,6 +11,7 @@ const zipHelpers = require('../utils/zipHelpers')
 const { reqSupportsWebp, clampPositiveInt } = require('../utils/index')
 const { ScanResult, AudioMimeType } = require('../utils/constants')
 const { getAudioMimeTypeFromExtname, encodeUriPath } = require('../utils/fileUtils')
+const { isStrmPath, isUrl, readStrmTarget, proxyRemoteStream, getCloudDirectUrl } = require('../utils/strmUtils')
 const LibraryItemScanner = require('../scanner/LibraryItemScanner')
 const AudioFileScanner = require('../scanner/AudioFileScanner')
 const Scanner = require('../scanner/Scanner')
@@ -976,7 +977,9 @@ class LibraryItemController {
       return res.sendStatus(404)
     }
 
-    const ffprobeData = await AudioFileScanner.probeAudioFile(audioFile.metadata.path)
+    // STRM 音轨探测其远端目标, 本地音轨探测本地文件
+    const probePath = audioFile.strmTarget || audioFile.metadata.path
+    const ffprobeData = await AudioFileScanner.probeAudioFile(probePath)
     res.json(ffprobeData)
   }
 
@@ -988,19 +991,183 @@ class LibraryItemController {
    */
   async getLibraryFile(req, res) {
     const libraryFile = req.libraryFile
+    let filePath = libraryFile.metadata.path
+
+    if (isStrmPath(filePath)) {
+      try {
+        const strmTarget = await readStrmTarget(filePath)
+        if (isUrl(strmTarget)) {
+          return proxyRemoteStream(strmTarget, req, res)
+        }
+        filePath = strmTarget
+      } catch (error) {
+        Logger.error(`[LibraryItemController] Failed to read STRM file "${filePath}"`, error)
+        return res.sendStatus(500)
+      }
+    }
+
+    const cloudDirectUrl = getCloudDirectUrl(filePath)
+    if (cloudDirectUrl) {
+      Logger.info(`[STRM-PLAY] mode=cloud-http-map source-path=${filePath}`)
+      return proxyRemoteStream(cloudDirectUrl, req, res)
+    }
 
     if (global.XAccel) {
-      const encodedURI = encodeUriPath(global.XAccel + libraryFile.metadata.path)
+      const encodedURI = encodeUriPath(global.XAccel + filePath)
       Logger.debug(`Use X-Accel to serve static file ${encodedURI}`)
       return res.status(204).header({ 'X-Accel-Redirect': encodedURI }).send()
     }
 
     // Express does not set the correct mimetype for m4b files so use our defined mimetypes if available
-    const audioMimeType = getAudioMimeTypeFromExtname(Path.extname(libraryFile.metadata.path))
+    const audioMimeType = getAudioMimeTypeFromExtname(Path.extname(filePath))
+    Logger.info(`[STRM-PLAY] mode=local-direct source=${filePath} range=${req.headers.range ? 'yes' : 'no'}`)
     if (audioMimeType) {
       res.setHeader('Content-Type', audioMimeType)
     }
-    res.sendFile(libraryFile.metadata.path)
+    res.sendFile(filePath)
+  }
+
+  /**
+   * POST api/items/:id/file/:fileid/rescan
+   * Re-scan a single audio file (probe again) and update the media record.
+   * STRM targets are force-probed so a previously failed probe can be retried.
+   *
+   * @param {LibraryItemControllerRequestWithFile} req
+   * @param {Response} res
+   */
+  async rescanLibraryFile(req, res) {
+    if (!req.user.isAdminOrUp) {
+      Logger.error(`[LibraryItemController] Non-admin user "${req.user.username}" attempted to rescan library file`)
+      return res.sendStatus(403)
+    }
+
+    const libraryFile = req.libraryFile
+    if (!libraryFile || libraryFile.fileType !== 'audio') {
+      Logger.error(`[LibraryItemController] Library file "${req.params.fileid}" is not an audio file`)
+      return res.status(400).send('Invalid audio file')
+    }
+
+    const libraryItem = req.libraryItem
+    const media = libraryItem.media
+    if (!media || !libraryItem.isBook || !Array.isArray(media.audioFiles)) {
+      Logger.error(`[LibraryItemController] Rescan file not supported for media type "${libraryItem.mediaType}"`)
+      return res.status(400).send('Unsupported media type')
+    }
+
+    // 单文件重新探测; STRM / 被跳过探测的路径强制探测
+    const scannedAudioFile = await AudioFileScanner.scan(
+      libraryItem.mediaType,
+      libraryFile,
+      { title: media.title, authors: [] },
+      { forceProbeStrmTargets: true, forceProbeSkippedPaths: true }
+    )
+    if (!scannedAudioFile) {
+      Logger.error(`[LibraryItemController] Failed to rescan library file "${libraryFile.metadata.relPath}"`)
+      return res.status(500).send('Failed to rescan audio file')
+    }
+
+    let updated = false
+    media.audioFiles = media.audioFiles.map((af) => {
+      if (af.ino === scannedAudioFile.ino || af.metadata?.path === scannedAudioFile.metadata?.path) {
+        updated = true
+        const next = scannedAudioFile.toJSON()
+        next.index = af.index
+        return next
+      }
+      return af
+    })
+    if (!updated) {
+      const next = scannedAudioFile.toJSON()
+      next.index = media.audioFiles.length + 1
+      media.audioFiles.push(next)
+    }
+
+    // 重算总时长(注意: 章节未在此重建, 需要章节请对图书整体重新扫描)
+    media.duration = 0
+    media.audioFiles.forEach((af) => {
+      if (!isNaN(af.duration)) media.duration += af.duration
+    })
+
+    media.changed('audioFiles', true)
+    media.changed('duration', true)
+    await media.save()
+
+    const expandedLibraryItem = await Database.libraryItemModel.getExpandedById(libraryItem.id)
+    SocketAuthority.libraryItemEmitter('item_updated', expandedLibraryItem)
+    res.json({ result: 'updated', audioFile: scannedAudioFile.toJSON() })
+  }
+
+  /**
+   * POST api/items/:id/rescan-failed
+   * 只对扫描失败(error)的音轨重新探测, 其余音轨不受影响。
+   * 相比整本重新扫描, 该操作不会触发其他文件的批量探测(避免远端 409/限流)。
+   *
+   * @param {LibraryItemControllerRequest} req
+   * @param {Response} res
+   */
+  async rescanFailedAudioFiles(req, res) {
+    if (!req.user.isAdminOrUp) {
+      Logger.error(`[LibraryItemController] Non-admin user "${req.user.username}" attempted to rescan failed audio files`)
+      return res.sendStatus(403)
+    }
+
+    const libraryItem = req.libraryItem
+    const media = libraryItem.media
+    if (!media || !libraryItem.isBook || !Array.isArray(media.audioFiles)) {
+      Logger.error(`[LibraryItemController] Rescan failed files not supported for media type "${libraryItem.mediaType}"`)
+      return res.status(400).send('Unsupported media type')
+    }
+
+    const failedAudioFiles = media.audioFiles.filter((af) => af.error || (af.probeAttempted && (!af.duration || isNaN(af.duration))))
+    if (!failedAudioFiles.length) {
+      return res.json({ result: 'noFailed', updated: 0 })
+    }
+    Logger.info(`[LibraryItemController] Rescanning ${failedAudioFiles.length} failed audio files for item "${libraryItem.id}"`)
+
+    // 并发批量探测, 与整本扫描一致的批量大小
+    const updatedByIno = new Map()
+    const batchSize = 32
+    for (let batch = 0; batch < failedAudioFiles.length; batch += batchSize) {
+      const batchItems = failedAudioFiles.slice(batch, batch + batchSize)
+      await Promise.all(
+        batchItems.map(async (af) => {
+          const libraryFile = libraryItem.getLibraryFileWithIno(af.ino)
+          if (!libraryFile || libraryFile.fileType !== 'audio') return
+          const scanned = await AudioFileScanner.scan(
+            libraryItem.mediaType,
+            libraryFile,
+            { title: media.title, authors: [] },
+            { forceProbeStrmTargets: true, forceProbeSkippedPaths: true }
+          )
+          if (scanned) updatedByIno.set(af.ino, scanned)
+        })
+      )
+    }
+
+    if (updatedByIno.size) {
+      media.audioFiles = media.audioFiles.map((af) => {
+        const scanned = af.ino && updatedByIno.get(af.ino)
+        if (!scanned) return af
+        const next = scanned.toJSON()
+        next.index = af.index
+        return next
+      })
+
+      // 重算总时长
+      media.duration = 0
+      media.audioFiles.forEach((a) => {
+        if (!isNaN(a.duration)) media.duration += a.duration
+      })
+
+      media.changed('audioFiles', true)
+      media.changed('duration', true)
+      await media.save()
+
+      const expandedLibraryItem = await Database.libraryItemModel.getExpandedById(libraryItem.id)
+      SocketAuthority.libraryItemEmitter('item_updated', expandedLibraryItem)
+    }
+
+    res.json({ result: 'updated', updated: updatedByIno.size })
   }
 
   /**

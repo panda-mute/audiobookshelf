@@ -7,6 +7,7 @@ const Database = require('../Database')
 
 const { PlayMethod } = require('../utils/constants')
 const { getAudioMimeTypeFromExtname, encodeUriPath } = require('../utils/fileUtils')
+const { isStrmPath, isUrl, readStrmTarget } = require('../utils/strmUtils')
 const zipHelpers = require('../utils/zipHelpers')
 
 const PlaybackSession = require('../objects/PlaybackSession')
@@ -198,7 +199,19 @@ class ShareController {
     if (!audioTrack) {
       return res.status(404).send('Track not found')
     }
-    const audioTrackPath = audioTrack.metadata.path
+    let audioTrackPath = audioTrack.metadata.path
+    if (isStrmPath(audioTrackPath)) {
+      try {
+        const strmTarget = await readStrmTarget(audioTrackPath)
+        if (isUrl(strmTarget)) {
+          return res.redirect(strmTarget)
+        }
+        audioTrackPath = strmTarget
+      } catch (error) {
+        Logger.error(`[ShareController] Failed to read STRM file "${audioTrackPath}"`, error)
+        return res.sendStatus(500)
+      }
+    }
 
     if (global.XAccel) {
       const encodedURI = encodeUriPath(global.XAccel + audioTrackPath)
