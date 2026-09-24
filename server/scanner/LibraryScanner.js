@@ -201,8 +201,12 @@ class LibraryScanner {
       } else {
         libraryItemDataFound = libraryItemDataFound.filter((lidf) => lidf !== libraryItemData)
         let libraryItemDataUpdated = await libraryItemData.checkLibraryItemData(existingLibraryItem, libraryScan)
-        if (libraryItemDataUpdated || forceRescan) {
-          if (forceRescan || libraryItemData.hasLibraryFileChanges || libraryItemData.hasPathChange) {
+        const shouldRefreshStrmTargetSizes =
+          libraryScan.libraryMediaType === 'book' &&
+          (process.env.STRM_SCAN_TARGET_SIZE === '1' || process.env.STRM_SCAN_URL_SIZE === '1') &&
+          libraryItemData.audioLibraryFiles.some((libraryFile) => libraryFile.metadata.ext?.toLowerCase() === '.strm')
+        if (libraryItemDataUpdated || forceRescan || shouldRefreshStrmTargetSizes) {
+          if (forceRescan || shouldRefreshStrmTargetSizes || libraryItemData.hasLibraryFileChanges || libraryItemData.hasPathChange) {
             const { libraryItem, wasUpdated } = await LibraryItemScanner.rescanLibraryItemMedia(existingLibraryItem, libraryItemData, libraryScan.library.settings, libraryScan)
             if (!forceRescan || wasUpdated) {
               libraryScan.resultsUpdated++

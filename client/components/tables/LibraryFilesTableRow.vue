@@ -7,8 +7,16 @@
       {{ $bytesPretty(file.metadata.size) }}
     </td>
     <td class="text-xs">
+      <p v-if="file.audioFile" :class="hasZeroDuration ? 'text-red-400 font-medium' : 'text-gray-300'">{{ $secondsToTimestamp(file.audioFile.duration) }}</p>
+      <p v-else class="text-gray-400">-</p>
+    </td>
+    <td class="text-xs">
       <div class="flex items-center">
         <p>{{ file.fileType }}</p>
+        <p v-if="file.audioFile && (file.audioFile.error || (file.audioFile.probeAttempted && !file.audioFile.duration))" class="ml-2 text-red-400 flex items-center" :title="file.audioFile.error || 'Probe returned zero duration'">
+          <span class="material-symbols text-sm mr-1">error</span>
+          {{ $strings.LabelScanFailed }}
+        </p>
       </div>
     </td>
     <td v-if="contextMenuItems.length" class="text-center">
@@ -44,6 +52,9 @@ export default {
     userIsAdmin() {
       return this.$store.getters['user/getIsAdminOrUp']
     },
+    hasZeroDuration() {
+      return !!this.file.audioFile && (!this.file.audioFile.duration || isNaN(this.file.audioFile.duration))
+    },
     downloadUrl() {
       return `${process.env.serverUrl}/api/items/${this.libraryItemId}/file/${this.file.ino}/download?token=${this.userToken}`
     },
@@ -68,6 +79,13 @@ export default {
           action: 'more'
         })
       }
+      // 单文件重新扫描(音轨探测失败后可在此重试)
+      if (this.userIsAdmin && this.file.audioFile) {
+        items.push({
+          text: this.$strings.ButtonReScan,
+          action: 'rescan'
+        })
+      }
       return items
     }
   },
@@ -79,6 +97,8 @@ export default {
         this.downloadLibraryFile()
       } else if (action === 'more') {
         this.$emit('showMore', this.file.audioFile)
+      } else if (action === 'rescan') {
+        this.rescanLibraryFile()
       }
     },
     deleteLibraryFile() {
@@ -103,6 +123,17 @@ export default {
     },
     downloadLibraryFile() {
       this.$downloadFile(this.downloadUrl, this.file.metadata.filename)
+    },
+    rescanLibraryFile() {
+      this.$axios
+        .$post(`/api/items/${this.libraryItemId}/file/${this.file.ino}/rescan`)
+        .then(() => {
+          this.$toast.success(this.$strings.ToastRescanUpdated)
+        })
+        .catch((error) => {
+          console.error('Failed to rescan file', error)
+          this.$toast.error(this.$strings.ToastRescanFailed)
+        })
     }
   },
   mounted() {}

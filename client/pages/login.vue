@@ -2,7 +2,7 @@
   <div id="page-wrapper" class="w-full h-screen overflow-y-auto">
     <div class="absolute z-0 top-0 left-0 px-6 py-3">
       <div class="flex items-center">
-        <img src="~static/icon.svg" alt="Audiobookshelf Logo" class="w-10 min-w-10 h-10" />
+        <img :src="uiLogoSrc" alt="Audiobookshelf Logo" class="w-10 min-w-10 h-10 app-logo" />
         <h1 class="text-xl ml-4 hidden lg:block hover:underline">audiobookshelf</h1>
       </div>
     </div>
@@ -95,6 +95,7 @@ export default {
       login_local: true,
       login_openid: false,
       authFormData: null,
+      uiLogo: 'classic',
       // New JWT auth system re-login flags
       showNewAuthSystemMessage: false,
       showNewAuthSystemAdminMessage: false
@@ -139,6 +140,9 @@ export default {
     },
     loginCustomMessage() {
       return this.authFormData?.authLoginCustomMessage || null
+    },
+    uiLogoSrc() {
+      return this.$uiLogo.getSrc(this.uiLogo)
     }
   },
   methods: {
@@ -311,6 +315,7 @@ export default {
     }
   },
   async mounted() {
+    this.uiLogo = this.$uiLogo.get()
     // Token passed as query parameter after successful oidc login
     if (this.$route.query?.accessToken) {
       localStorage.setItem('token', this.$route.query.accessToken)

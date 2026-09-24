@@ -1,0 +1,77 @@
+name: Build STRM Docker Image
+
+# 构建 STRM 定制版 Docker 镜像并推送到 GitHub 容器仓库 (GHCR)。
+# 触发方式：
+#   1) 推送形如 strm-v2.35.1 的 tag 时自动构建（镜像 tag 取 2.35.1）
+#   2) 在 Actions 页面手动运行 (workflow_dispatch)，可自定义镜像 tag
+#   3) 被 auto-update-strm.yml 自动调用 (workflow_call)
+# 镜像地址：ghcr.io/<你的用户名>/audiobookshelf-strm
+
+on:
+  push:
+    tags:
+      - 'strm-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '镜像 tag（如 2.35.1 或 latest）'
+        required: true
+        default: 'latest'
+  workflow_call:
+    inputs:
+      ref:
+        description: '要构建的 git ref（分支/tag/sha）'
+        required: true
+        type: string
+      image_tag:
+        description: '镜像版本 tag（如 2.36.0）'
+        required: true
+        type: string
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/audiobookshelf-strm
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: 计算镜像 tag
+        id: tags
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            V="${{ inputs.image_tag }}"            # 被 auto-update 调用
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            V="${GITHUB_REF_NAME#strm-v}"          # 推送 strm-v2.35.1 -> 2.35.1
+          else
+            V="${{ inputs.tag }}"                  # 手动运行
+          fi
+          echo "list=${IMAGE}:${V},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          echo "将构建: ${IMAGE}:${V} 和 ${IMAGE}:latest"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

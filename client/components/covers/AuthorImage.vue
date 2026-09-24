@@ -1,18 +1,21 @@
 <template>
-  <div ref="wrapper" :class="`rounded-${rounded}`" class="w-full h-full bg-primary overflow-hidden">
-    <svg v-if="!imagePath" width="140%" height="140%" style="margin-left: -20%; margin-top: -20%; opacity: 0.6" viewBox="0 0 177 266" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path fill="white" d="M40.7156 165.47C10.2694 150.865 -31.5407 148.629 -38.0532 155.529L63.3191 204.159L76.9443 190.899C66.828 181.394 54.006 171.846 40.7156 165.47Z" stroke="white" stroke-width="4" transform="translate(-2 -1)" />
-      <path d="M-38.0532 155.529C-31.5407 148.629 10.2694 150.865 40.7156 165.47C54.006 171.846 66.828 181.394 76.9443 190.899L95.0391 173.37C80.6681 159.403 64.7526 149.155 51.5747 142.834C21.3549 128.337 -46.2471 114.563 -60.6897 144.67L-71.5489 167.307L44.5864 223.019L63.3191 204.159L-38.0532 155.529Z" fill="white" />
-      <path
-        d="M105.87 29.6508C80.857 17.6515 50.8784 28.1923 38.879 53.2056C26.8797 78.219 37.4205 108.198 62.4338 120.197C87.4472 132.196 117.426 121.656 129.425 96.6422C141.425 71.6288 130.884 41.6502 105.87 29.6508ZM106.789 85.783C112.761 73.3329 107.461 58.2599 95.0112 52.2874C82.5611 46.3148 67.4881 51.6147 61.5156 64.0648C55.543 76.5149 60.8429 91.5879 73.293 97.5604C85.7431 103.533 100.816 98.2331 106.789 85.783Z"
-        fill="white"
-      />
-      <path
-        d="M151.336 159.01L159.048 166.762L82.7048 242.703L74.973 242.683L74.9934 234.951L151.336 159.01ZM181.725 108.497C179.624 108.491 177.436 109.326 175.835 110.918L160.415 126.257L191.848 157.856L207.268 142.517C210.554 139.248 210.568 133.954 207.299 130.667L187.685 110.95C186.009 109.264 183.91 108.502 181.725 108.497ZM151.399 135.226L58.2034 227.931L58.1203 259.447L89.6359 259.53L182.831 166.825L151.399 135.226Z"
-        fill="white"
-      />
-      <path d="M151.336 159.01L159.048 166.762L82.7048 242.703L74.973 242.683L74.9934 234.951L151.336 159.01Z" fill="white" stroke="white" stroke-width="10px" />
-    </svg>
+  <div ref="wrapper" :class="`rounded-${rounded}`" class="author-image-shell w-full h-full overflow-hidden">
+    <div v-if="!imagePath" class="author-image-placeholder">
+      <div class="author-image-glow author-image-glow-top" />
+      <div class="author-image-glow author-image-glow-bottom" />
+      <div class="author-image-bust-wrap">
+        <svg class="author-image-bust" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="120" cy="84" r="46" fill="currentColor" opacity="0.98" />
+          <path d="M52 198C52 159.34 83.34 128 122 128H118C156.66 128 188 159.34 188 198V210H52V198Z" fill="currentColor" opacity="0.96" />
+          <path
+            d="M163.337 55.509C171.271 62.529 176.274 72.782 176.274 84.202C176.274 105.364 159.121 122.516 137.959 122.516C134.098 122.516 130.371 121.945 126.857 120.883C139.871 116.947 149.347 104.867 149.347 90.573C149.347 73.273 135.323 59.248 118.022 59.248C104.153 59.248 92.39 68.271 88.274 80.772C89.999 58.148 108.891 40.312 131.962 40.312C143.915 40.312 154.873 45.111 163.337 55.509Z"
+            fill="currentColor"
+            opacity="0.28"
+          />
+        </svg>
+      </div>
+      <div class="author-image-monogram">{{ placeholderInitial }}</div>
+    </div>
     <div v-else class="w-full h-full relative">
       <div v-if="showCoverBg" class="cover-bg absolute" :style="{ backgroundImage: `url(${imgSrc})` }" />
       <img ref="img" :src="imgSrc" @load="imageLoaded" class="absolute top-0 left-0 h-full w-full" :class="coverContain ? 'object-contain' : 'object-cover'" />
@@ -41,6 +44,10 @@ export default {
   computed: {
     _author() {
       return this.author || {}
+    },
+    placeholderInitial() {
+      const name = typeof this._author?.name === 'string' ? this._author.name.trim() : ''
+      return name ? name.charAt(0).toUpperCase() : '作'
     },
     authorId() {
       return this._author.id
@@ -73,3 +80,106 @@ export default {
   mounted() {}
 }
 </script>
+
+<style>
+.author-image-shell {
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.1)),
+    #171d2a;
+}
+
+.author-image-placeholder {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: #d7d8de;
+  overflow: hidden;
+}
+
+.author-image-glow {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(12px);
+}
+
+.author-image-glow-top {
+  width: 58%;
+  height: 22%;
+  top: 6%;
+  left: 21%;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.author-image-glow-bottom {
+  width: 86%;
+  height: 34%;
+  bottom: -4%;
+  left: 7%;
+  background: rgba(122, 211, 255, 0.11);
+}
+
+.author-image-bust-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12% 10% 18%;
+}
+
+.author-image-bust {
+  width: 100%;
+  height: 100%;
+  opacity: 0.96;
+}
+
+.author-image-monogram {
+  position: absolute;
+  right: 10%;
+  bottom: 10%;
+  width: 22%;
+  height: 22%;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #f8fbff;
+  background: linear-gradient(135deg, rgba(90, 146, 225, 0.96), rgba(79, 166, 126, 0.96));
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
+}
+
+body[data-ui-theme='porcelain'] .author-image-shell,
+body[data-ui-theme='snow'] .author-image-shell {
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.82), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(235, 240, 248, 0.92)),
+    #edf2f8;
+}
+
+body[data-ui-theme='porcelain'] .author-image-placeholder,
+body[data-ui-theme='snow'] .author-image-placeholder {
+  color: #8f99ac;
+}
+
+body[data-ui-theme='porcelain'] .author-image-glow-top,
+body[data-ui-theme='snow'] .author-image-glow-top {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+body[data-ui-theme='porcelain'] .author-image-glow-bottom,
+body[data-ui-theme='snow'] .author-image-glow-bottom {
+  background: rgba(115, 153, 206, 0.12);
+}
+
+body[data-ui-theme='porcelain'] .author-image-monogram,
+body[data-ui-theme='snow'] .author-image-monogram {
+  box-shadow: 0 14px 28px rgba(122, 143, 174, 0.22);
+}
+</style>

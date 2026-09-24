@@ -1,0 +1,85 @@
+# =====================================================================
+# Audiobookshelf STRM 定制版 —— Docker Compose 编排
+# 镜像: ghcr.io/2222221029/audiobookshelf-strm (GitHub Actions 自动构建, 公开免登录)
+# 说明: 支持 .strm 云直链播放, 配合 openlist/openlist-strm 无需本地上传音频文件
+#
+# 启动:
+#   docker compose pull && docker compose up -d
+# 访问:
+#   http://<宿主机IP>:2048
+# =====================================================================
+
+services:
+  audiobookshelf-strm:
+    container_name: audiobookshelf-strm
+
+    # 锁版本(稳定): 当前最新镜像 tag
+    image: ghcr.io/2222221029/audiobookshelf-strm:2.36.0.12
+    # 想自动跟随官方新版(与下方 watchtower 配合), 改用:
+    # image: ghcr.io/2222221029/audiobookshelf-strm:latest
+
+    # 注意: 官方镜像只构建 linux/amd64。
+    # 树莓派 / 群晖 arm 等 arm64 设备需本地构建, 替换上面 image 为:
+    #   build:
+    #     context: .
+    #     dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    ports:
+      - "2048:80"                # 左侧 2048 是宿主机端口, 可自行修改; 右侧 80 是容器内部端口(不要改)
+
+    environment:
+      TZ: Asia/Shanghai
+
+      # ---------- STRM 扫描行为 ----------
+      # 扫描时是否对 .strm 指向的远端音频做 ffprobe 探测。
+      #   1 = 能拿到时长/码率/章节/内嵌封面, 但大库扫描很慢且消耗网盘流量
+      #   0 = 跳过探测, 扫描飞快(推荐; 时长等信息由播放器从流里获取, 元数据靠目录命名)
+      STRM_SCAN_PROBE: "0"
+
+      # 扫描时是否 HEAD 远端文件读取真实大小(用于界面显示文件大小)。
+      #   1 = 每个文件多一次远程请求; 大库建议 0
+      STRM_SCAN_TARGET_SIZE: "0"
+
+      # 探测远端文件前的节流延时(毫秒), 防止请求网盘过快触发风控
+      STRM_SCAN_PROBE_DELAY_MS: "200"
+
+      # 这些路径前缀下的文件跳过探测。默认 /CloudNAS(云盘本地挂载点)
+      STRM_SCAN_SKIP_PROBE_PATHS: "/CloudNAS"
+
+      # ---------- 播放 / 直连 ----------
+      # 本地挂载路径 -> HTTP 直链的映射。格式: /本地路径=http://host:port/前缀, 多个用逗号分隔。
+      # 作用: 把容器内的云盘挂载路径直接转成 HTTP 直链播放, 不占用 ABS 带宽。
+      # 务必把 IP/端口改成你的 openlist/AList/WebDAV 地址; 用不到就整行删掉。
+      STRM_DIRECT_URL_MAP: "/CloudNAS=http://NAS_IP:19798/dav"
+
+      # 1 = 日志里打印完整 CDN 签名 URL(便于排障, 但会泄露 token, 默认 0)
+      STRM_LOG_FULL_REDIRECT_URL: "0"
+
+    volumes:
+      - ./config:/config                 # 配置 + 数据库(必须持久化)
+      - ./metadata:/metadata             # 封面、缓存等元数据(必须持久化)
+      - ./audiobooks:/audiobooks:ro      # 放 .strm 文件的有声书库目录(只读)
+      # - ./podcasts:/podcasts:ro        # 播客库(可选, 按需取消注释)
+      # - /path/to/CloudNAS:/CloudNAS:rshared  # 云盘本地挂载点(rshared 让容器看见后续挂载); 与 STRM_DIRECT_URL_MAP 配合使用, 不用可删
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:80/healthcheck').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ------------------------------------------------------------------
+  # 可选: Watchtower 每天检查一次镜像并自动更新重启。
+  # 注意: 只有上面的 image 使用 :latest 时它才有意义(锁版本不会更新)。
+  # 不需要自动升级可把下面整个服务删掉。
+  # ------------------------------------------------------------------
+  watchtower:
+    image: containrrr/watchtower
+    container_name: audiobookshelf-strm-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --cleanup --interval 86400 audiobookshelf-strm

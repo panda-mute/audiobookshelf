@@ -5,6 +5,10 @@
       <div class="h-5 md:h-7 w-5 md:w-7 rounded-full bg-white/10 flex items-center justify-center">
         <span class="text-sm font-mono">{{ files.length }}</span>
       </div>
+      <p v-if="failedAudioFileCount" class="ml-2 text-red-400 text-xs flex items-center" :title="failedAudioFileSummary">
+        <span class="material-symbols text-sm mr-1">error</span>
+        {{ failedAudioFileCount }} {{ $strings.LabelScanFailed }}
+      </p>
       <div class="grow" />
       <ui-btn v-if="userIsAdmin" small :color="showFullPath ? 'bg-gray-600' : 'bg-primary'" class="mr-2 hidden md:block" @click.stop="toggleFullPath">{{ $strings.ButtonFullPath }}</ui-btn>
       <div class="cursor-pointer h-10 w-10 rounded-full hover:bg-black-400 flex justify-center items-center duration-500" :class="showFiles ? 'transform rotate-180' : ''">
@@ -17,8 +21,9 @@
           <tr>
             <th class="text-left px-4">{{ $strings.LabelPath }}</th>
             <th class="text-left w-24 min-w-24">{{ $strings.LabelSize }}</th>
+            <th class="text-left px-4 w-24">{{ $strings.LabelDuration }}</th>
             <th class="text-left px-4 w-24">{{ $strings.LabelType }}</th>
-            <th v-if="userCanDelete || userCanDownload || (userIsAdmin && audioFiles.length && !inModal)" class="text-center w-16"></th>
+            <th v-if="userCanDelete || userCanDownload || (userIsAdmin && audioFiles.length)" class="text-center w-16"></th>
           </tr>
           <template v-for="file in filesWithAudioFile">
             <tables-library-files-table-row :key="file.path" :libraryItemId="libraryItemId" :showFullPath="showFullPath" :file="file" :inModal="inModal" @showMore="showMore" />
@@ -78,6 +83,16 @@ export default {
         }
         return file
       })
+    },
+    failedAudioFiles() {
+      // 失败 = 有 error, 或"探测过但时长为 0"(跳过探测的 strm 不计入)
+      return this.audioFiles.filter((af) => af.error || (af.probeAttempted && (!af.duration || isNaN(af.duration))))
+    },
+    failedAudioFileCount() {
+      return this.failedAudioFiles.length
+    },
+    failedAudioFileSummary() {
+      return this.failedAudioFiles.map((af) => `${af.metadata?.filename || af.metadata?.relPath || ''}: ${af.error}`).join('\n')
     }
   },
   methods: {

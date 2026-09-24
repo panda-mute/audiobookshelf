@@ -1,0 +1,91 @@
+# =====================================================================
+# 完整链路编排(模板): OpenList(网盘挂载) -> openlist-strm(生成 .strm)
+#                      -> Audiobookshelf STRM 定制版(播放)
+#
+# 数据流:
+#   网盘/云存储
+#     └─ OpenList 挂载并暴露 HTTP 直链(5244)
+#          └─ openlist-strm 调 OpenList API 扫描目录, 生成同名 .strm 文件
+#               └─ Audiobookshelf STRM 定制版 扫描 .strm, 播放时代理远端音频
+#
+# 使用前必改:
+#   1. openlist-strm 的 openlistServerUrl / openlistServerToken / openlistScanPath
+#   2. audiobookshelf-strm 的 STRM_DIRECT_URL_MAP(或直接删掉)
+#   3. 所有卷挂载路径
+#
+# 注意: 这是模板, 路径与 openlist-strm 的实际输出目录要按你的环境核实后使用。
+# =====================================================================
+
+services:
+  # 1) 网盘挂载/聚合服务(AList 的 fork)
+  openlist:
+    container_name: openlist
+    image: openlistteam/openlist:latest
+    restart: always
+    ports:
+      - "5244:5244"    # Web 管理 + API(openlist-strm 需要)
+      - "5245:5245"    # 按 openlist 官方说明保留
+    volumes:
+      - ./openlist-data:/opt/openlist/data
+    environment:
+      - TZ=Asia/Shanghai
+      - UMASK=022
+    user: "0:0"
+
+  # 2) 生成 .strm 文件
+  openlist-strm:
+    container_name: openlist-strm
+    image: jacksaoding/openlist-strm:latest
+    # 官方模板用 host 网络, 便于回调 openlistServerUrl(用宿主机 IP)。
+    # 若想改 bridge, 需保证容器间能互访并把 openlistServerUrl 写成可达地址。
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      openlistServerUrl: "http://HOST_IP:5244"     # OpenList 地址, host 网络下用宿主机 IP
+      openlistServerToken: "你的openlist后台token"   # 必填, OpenList 后台获取
+      openlistScanPath: "/阿里云分享/有声书"          # 要生成 strm 的目录, 可逗号分隔多个
+      encode: "1"                  # 是否编码 strm 文件里的链接(默认 1)
+      slowMode: "1"                # 单线程模式, 防止请求网盘过快(默认 1)
+      runAfterStartup: "1"         # 启动即执行一次同步(默认 1)
+      refresh: "1"                 # 1=实时读网盘最新数据, 0=读 openlist 缓存
+      isDownSub: "0"               # 是否下载字幕(有声书置 0)
+      scheduledCron: "0 0 6,18 * * ?"   # 每天 6 点、18 点自动同步
+      # tgToken / tgUserId: 需要 TG 机器人命令时再填
+    volumes:
+      - ./strm-output:/data        # 生成的 .strm 输出目录(与下方 ABS 共用)
+
+  # 3) 播放服务
+  audiobookshelf-strm:
+    container_name: audiobookshelf-strm
+    image: ghcr.io/2222221029/audiobookshelf-strm:2.36.0.12   # 或 :latest
+    restart: unless-stopped
+    depends_on:
+      - openlist
+      - openlist-strm
+    ports:
+      - "2048:80"                  # 宿主机端口:容器端口(容器内固定 80)
+    environment:
+      TZ: Asia/Shanghai
+      STRM_SCAN_PROBE: "0"                 # 0=扫描时不对远端音频做 ffprobe(快); 1=拿时长/章节
+      STRM_SCAN_TARGET_SIZE: "0"           # 0=不 HEAD 远端拿文件大小
+      STRM_SCAN_PROBE_DELAY_MS: "200"
+      STRM_SCAN_SKIP_PROBE_PATHS: "/CloudNAS"
+      # 有本地云盘挂载就填; 没有整行删除
+      STRM_DIRECT_URL_MAP: "/CloudNAS=http://HOST_IP:19798/dav"
+      STRM_LOG_FULL_REDIRECT_URL: "0"
+    volumes:
+      - ./abs-config:/config                 # ABS 配置/数据库
+      - ./abs-metadata:/metadata             # ABS 封面/元数据
+      - ./strm-output:/audiobooks:ro         # 与 openlist-strm 输出目录共用(只读)
+      # - ./podcasts:/podcasts:ro            # 播客库(可选)
+      # - /path/to/CloudNAS:/CloudNAS:rshared
+
+  # 可选: 镜像自动更新(仅当 ABS 使用 :latest 时有效)
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   container_name: watchtower
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   command: --cleanup --interval 86400 audiobookshelf-strm
