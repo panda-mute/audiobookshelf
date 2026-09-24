@@ -105,3 +105,4 @@ jobs:
     with:
       ref: ${{ needs.update.outputs.strmtag }}
       image_tag: ${{ needs.update.outputs.version }}
+    secrets: inherit
