@@ -119,8 +119,18 @@ export default class PlayerHandler {
   }
 
   playerError() {
-    // Switch to HLS stream on error
+    // Switch to HLS stream on error — but only when not already in direct-play mode for
+    // STRM / cloud-mounted tracks. For those, force-transcoding downloads the entire file
+    // from cloud storage which defeats the purpose of direct play.
     if (!this.isCasting && this.player instanceof LocalAudioPlayer) {
+      if (!this.isHlsTranscode) {
+        const tracks = this.player.audioTracks || []
+        const hasStrmTrack = tracks.some((t) => t.mimeType === 'application/x-audiobookshelf-strm')
+        if (hasStrmTrack) {
+          console.warn('[PlayerHandler] Audio player error on STRM track — suppressing HLS transcode fallback')
+          return
+        }
+      }
       console.log(`[PlayerHandler] Audio player error switching to HLS stream`)
       this.prepare(true)
     }

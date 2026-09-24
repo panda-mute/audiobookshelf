@@ -52,7 +52,25 @@ export default {
   },
   computed: {
     supportedShelves() {
-      return this.shelves.filter((shelf) => ['book', 'podcast', 'episode', 'series', 'authors', 'narrators'].includes(shelf.type))
+      const filteredShelves = this.shelves.filter((shelf) => {
+        if (!['book', 'podcast', 'episode', 'series', 'authors', 'narrators'].includes(shelf.type)) return false
+        if (!Array.isArray(shelf.entities) || !shelf.entities.length) return false
+        return !!(shelf.labelStringKey || shelf.label)
+      })
+
+      const configuredOrder = this.homeModulesOrder
+      if (!configuredOrder.length) return filteredShelves
+
+      return [...filteredShelves].sort((a, b) => {
+        const indexA = configuredOrder.indexOf(a.id)
+        const indexB = configuredOrder.indexOf(b.id)
+        const orderA = indexA === -1 ? Number.MAX_SAFE_INTEGER : indexA
+        const orderB = indexB === -1 ? Number.MAX_SAFE_INTEGER : indexB
+        return orderA - orderB
+      })
+    },
+    homeModulesOrder() {
+      return this.$store.state.serverSettings?.homeModulesOrder || []
     },
     userIsAdminOrUp() {
       return this.$store.getters['user/getIsAdminOrUp']
