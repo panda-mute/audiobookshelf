@@ -3,7 +3,7 @@ name: Auto Update STRM from Upstream
 # 定时轮询官方 advplyr/audiobookshelf 的最新 release，
 # 自动把 strm 定制改动 rebase 到最新版本、打 tag 并触发镜像构建。
 # - 无新版本：什么都不做。
-# - 有新版本且无冲突：自动更新 strm 分支 + 打 strm-vX.Y.Z tag + 构建推送镜像。
+# - 有新版本且无冲突：自动更新 master 分支 + 打 strm-vX.Y.Z tag + 构建推送镜像。
 # - 有冲突：中止、不破坏代码，并自动开 issue 提醒你人工 rebase 一次。
 
 on:
@@ -28,10 +28,10 @@ jobs:
       version: ${{ steps.rebase.outputs.version }}
       strmtag: ${{ steps.rebase.outputs.strmtag }}
     steps:
-      - name: 检出 strm 分支（含完整历史）
+      - name: 检出 master 分支（含完整历史）
         uses: actions/checkout@v4
         with:
-          ref: strm
+          ref: master
           fetch-depth: 0
 
       - name: 配置 git 身份
@@ -77,20 +77,20 @@ jobs:
             exit 0
           fi
 
-          git checkout strm
+          git checkout master
           if git rebase "$L"; then
             git tag "$STRMTAG"
-            git push origin strm --force-with-lease
+            git push origin master --force-with-lease
             git push origin "$STRMTAG"
             sed -i "s/updated=false/updated=true/" "$GITHUB_OUTPUT"
             echo "🎉 已把定制改动更新到 $L 并打 tag $STRMTAG"
           else
             git rebase --abort || true
-            echo "❌ rebase 到 $L 出现冲突，已中止，未改动 strm"
+            echo "❌ rebase 到 $L 出现冲突，已中止，未改动 master"
             # 同版本若已有未关闭的 issue 则不重复创建
             EXIST=$(gh issue list --state open --search "\"$L\" in:title" --json number --jq 'length')
             if [ "$EXIST" = "0" ]; then
-              BODY=$(printf '自动把 strm 定制改动 rebase 到官方 `%s` 时发生**冲突**，已自动中止（strm 分支未被改动，镜像不受影响）。\n\n请在本地解决一次冲突：\n```bash\ncd abs-strm\ngit fetch upstream --tags\ngit checkout strm\ngit rebase %s\n# 手动解决冲突后：\ngit add <冲突文件>\ngit rebase --continue\ngit tag %s\ngit push origin strm --force-with-lease\ngit push origin %s\n```\n推送后会自动构建并推送镜像 `%s` + `latest`。' "$L" "$L" "$STRMTAG" "$STRMTAG" "$VER")
+              BODY=$(printf '自动把 strm 定制改动 rebase 到官方 `%s` 时发生**冲突**，已自动中止（master 分支未被改动，镜像不受影响）。\n\n请在本地解决一次冲突：\n```bash\ncd audiobookshelf\ngit fetch upstream --tags\ngit checkout master\ngit rebase %s\n# 手动解决冲突后：\ngit add <冲突文件>\ngit rebase --continue\ngit tag %s\ngit push origin master --force-with-lease\ngit push origin %s\n```\n推送后会自动构建并推送镜像 `%s` + `latest`。' "$L" "$L" "$STRMTAG" "$STRMTAG" "$VER")
               gh issue create --title "⚠️ 自动更新冲突：官方 $L 需人工 rebase" --body "$BODY"
             fi
           fi
