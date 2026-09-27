@@ -103,6 +103,6 @@ jobs:
       packages: write
     uses: ./.github/workflows/build-strm-image.yml
     with:
-      ref: ${{ needs.update.outputs.strmtag }}
+      ref: master
       image_tag: ${{ needs.update.outputs.version }}
     secrets: inherit
